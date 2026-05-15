@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "document-search"
+version = "0.1.0"
+description = "Полнотекстовый поиск документов с Elasticsearch"
+authors = ["Aleksey Lozhkin <aleksey.s.lozhkin@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+django = ">=6.0.5,<7.0.0"
+djangorestframework = ">=3.17.1,<4.0.0"
+djangorestframework-simplejwt = ">=5.5.1,<6.0.0"
+psycopg2-binary = ">=2.9.12,<3.0.0"
+elasticsearch = ">=9.4.0,<10.0.0"
+django-elasticsearch-dsl = ">=9.0,<10.0"
+drf-yasg = ">=1.21.15,<2.0.0"
+python-dotenv = ">=1.2.2,<2.0.0"
+gunicorn = ">=26.0.0,<27.0.0"
+django-htmx = ">=1.27.0,<2.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4"
+pytest-django = "^4.5"
+pytest-cov = "^4.1"
+flake8 = "^6.1"
+black = "^23.11"
+isort = "^5.12"
+pre-commit = "^3.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+target-version = ['py312']
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "app.settings"
+python_files = "test_*.py"
+addopts = "--cov=documents --cov-report=html --cov-report=term"
