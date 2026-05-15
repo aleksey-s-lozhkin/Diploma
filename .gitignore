@@ -48,10 +48,14 @@ htmlcov/
 .tox/
 .mypy_cache/
 
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
 # Project specific
 *.db
 debug.log
+
+
+# Docker
+*.pid
+
+# OS
+Thumbs.db
+EOF
