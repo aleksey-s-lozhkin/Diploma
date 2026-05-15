@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # ---------- PostgreSQL ----------
+  db:
+    image: postgres:15-alpine
+    container_name: document_search_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docsearch}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  # ---------- Elasticsearch ----------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: document_search_es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - app_network
+
+  # ---------- Redis (кэш / rate limiting) ----------
+  redis:
+    image: redis:7-alpine
+    container_name: document_search_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  # ---------- Django + Gunicorn ----------
+  web:
+    build: .
+    container_name: document_search_web
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py collectstatic --noinput &&
+        gunicorn app.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2 --access-logfile -
+      "
+    volumes:
+      - ./static:/app/static
+      - ./media:/app/media
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=app.settings
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-docsearch}
+      - ELASTICSEARCH_HOST=elasticsearch
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DEBUG=${DJANGO_DEBUG:-False}
+    depends_on:
+      db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  # ---------- Nginx (reverse proxy + статика) ----------
+  nginx:
+    build: ./nginx
+    container_name: document_search_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./static:/app/static:ro
+      - ./media:/app/media:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - app_network
+
+# ---------- Сети ----------
+networks:
+  app_network:
+    driver: bridge
+
+# ---------- Тома для данных ----------
+volumes:
+  postgres_data:
+  es_data:
+  redis_data:
