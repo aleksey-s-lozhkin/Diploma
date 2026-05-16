@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
@@ -11,12 +9,14 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data_dev:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - app_network
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
@@ -27,45 +27,52 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - app_network
 
   redis:
     image: redis:7-alpine
     container_name: diploma-redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - app_network
 
   web:
     build: .
     container_name: diploma-web
-    # Исправлено: используем Gunicorn с config.wsgi
     command: >
       sh -c "
         python manage.py migrate &&
         python manage.py collectstatic --noinput &&
-        gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --log-level info
+        gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 2 --log-level info
       "
     volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
+      - ./static:/app/static
+      - ./media:/app/media
+      - ./logs:/app/logs
     environment:
-      - DEBUG=True
-      - DJANGO_SECRET_KEY=dev-secret-key-do-not-use-in-production
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DEBUG=False
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-dev-secret-key-change-in-production}
       - POSTGRES_DB=docsearch
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - DB_HOST=db
-      - DB_PORT=5432
       - ELASTICSEARCH_HOST=elasticsearch
       - REDIS_URL=redis://redis:6379/0
     depends_on:
@@ -75,6 +82,29 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    expose:
+      - "8000"
+    networks:
+      - app_network
+
+  nginx:
+    build: ./nginx
+    container_name: diploma-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./static:/app/static:ro
+      - ./media:/app/media:ro
+    depends_on:
+      - web
+    networks:
+      - app_network
 
 volumes:
-  postgres_data_dev:
+  postgres_data:
+  es_data:
+  redis_data:
+
+networks:
+  app_network:
+    driver: bridge
