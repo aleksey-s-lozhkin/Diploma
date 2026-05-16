@@ -1,7 +1,12 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenVerifyView
 
 from . import views
+
+# Router для DocumentViewSet
+router = DefaultRouter()
+router.register(r"documents", views.DocumentViewSet, basename="document")
 
 urlpatterns = [
     # Health check (для Docker)
@@ -13,4 +18,9 @@ urlpatterns = [
     path("auth/verify/", TokenVerifyView.as_view(), name="token_verify"),
     path("auth/logout/", views.LogoutView.as_view(), name="logout"),
     path("auth/profile/", views.UserProfileView.as_view(), name="profile"),
+    # Документы
+    path("", include(router.urls)),
+    # Поиск
+    path("search/", views.SearchView.as_view(), name="search"),
+    path("search/history/", views.SearchHistoryView.as_view(), name="search-history"),
 ]
