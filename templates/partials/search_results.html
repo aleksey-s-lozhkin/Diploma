@@ -1,0 +1,27 @@
+{% if results %}
+    {% for doc in results %}
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <div class="mb-2">
+                    {% for rubric in doc.rubrics %}
+                        <span class="badge bg-secondary">{{ rubric }}</span>
+                    {% endfor %}
+                </div>
+                <p class="card-text">
+                    {% if doc.highlights %}
+                        {% for fragment in doc.highlights %}
+                            {{ fragment|safe }}...
+                        {% endfor %}
+                    {% else %}
+                        {{ doc.text|truncatewords:50 }}
+                    {% endif %}
+                </p>
+                <small class="text-muted">{{ doc.created_date|date:"d.m.Y H:i" }}</small>
+            </div>
+        </div>
+    {% endfor %}
+{% elif query %}
+    <div class="alert alert-warning">По вашему запросу "{{ query }}" ничего не найдено</div>
+{% else %}
+    <div class="alert alert-info">Введите запрос для поиска</div>
+{% endif %}

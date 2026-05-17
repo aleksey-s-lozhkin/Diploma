@@ -55,6 +55,8 @@ services:
   web:
     build: .
     container_name: diploma-web
+    ports:
+      - "8000:8000"
     command: >
       sh -c "
         python manage.py migrate &&

@@ -38,7 +38,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",  # ВКЛЮЧЕН
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -110,8 +110,10 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = "/static/"
-STATIC_ROOT = os.path.join(BASE_DIR / "static")
-STATICFILES_DIRS = []
+STATIC_ROOT = os.path.join(BASE_DIR, "static")
+STATICFILES_DIRS = (
+    [os.path.join(BASE_DIR, "static_src")] if os.path.exists(os.path.join(BASE_DIR, "static_src")) else []
+)
 
 # Media files
 MEDIA_URL = "/media/"
@@ -155,3 +157,12 @@ SIMPLE_JWT = {
 
 # Health check endpoint
 HEALTH_CHECK_ENABLED = True
+
+LOGIN_URL = "/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/login/"
+
+# CSRF settings for HTMX
+CSRF_TRUSTED_ORIGINS = ["http://localhost", "http://127.0.0.1"]
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = "Lax"

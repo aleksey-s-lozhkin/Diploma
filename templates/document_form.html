@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_edit %}Редактирование документа{% else %}Новый документ{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">{% if is_edit %}✏️ Редактирование документа{% else %}📝 Новый документ{% endif %}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="rubrics" class="form-label">Рубрики (через запятую)</label>
+                        <input type="text"
+                               name="rubrics"
+                               id="rubrics"
+                               class="form-control"
+                               value="{{ rubrics_value }}"
+                               placeholder="например: технологии, python, backend">
+                        <div class="form-text text-muted">Введите рубрики через запятую</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="text" class="form-label">Текст документа</label>
+                        <textarea name="text"
+                                  id="text"
+                                  class="form-control"
+                                  rows="10"
+                                  required>{{ text_value }}</textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'dashboard' %}" class="btn btn-secondary">Отмена</a>
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

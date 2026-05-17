@@ -8,13 +8,10 @@ from .serializers import RegisterSerializer, UserSerializer
 
 
 def health_check(request):
-    """Эндпоинт для проверки работоспособности сервиса."""
     return JsonResponse({"status": "ok"})
 
 
 class RegisterView(APIView):
-    """Регистрация нового пользователя"""
-
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -34,8 +31,6 @@ class RegisterView(APIView):
 
 
 class LogoutView(APIView):
-    """Выход из системы"""
-
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
@@ -49,10 +44,47 @@ class LogoutView(APIView):
 
 
 class UserProfileView(APIView):
-    """Получение информации о текущем пользователе"""
-
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+
+class SearchView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        import sys
+        import traceback
+
+        try:
+            print("=== SEARCH CALLED ===", file=sys.stderr)
+            print(f"User: {request.user}", file=sys.stderr)
+            print(f"Data: {request.data}", file=sys.stderr)
+
+            from elasticsearch_dsl import Search
+            from elasticsearch_dsl.connections import connections
+
+            query = request.data.get("query", "")
+
+            client = connections.get_connection()
+            s = Search(using=client, index="documents")
+            s = s.query("match", text=query)
+            s = s.filter("term", user_id=request.user.id)
+            response = s.execute()
+
+            return Response(
+                {"count": response.hits.total.value, "results": [{"id": hit.id, "text": hit.text} for hit in response]}
+            )
+        except Exception as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            return Response({"error": str(e)}, status=500)
+
+
+class PingView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({"ping": "pong"})
