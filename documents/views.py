@@ -1,10 +1,11 @@
 from django.http import JsonResponse
-from rest_framework import permissions, status
+from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import RegisterSerializer, UserSerializer
+from .models import Document
+from .serializers import DocumentSerializer, RegisterSerializer, UserSerializer
 
 
 def health_check(request):
@@ -55,36 +56,30 @@ class SearchView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        import sys
-        import traceback
+        from elasticsearch_dsl import Search
+        from elasticsearch_dsl.connections import connections
 
-        try:
-            print("=== SEARCH CALLED ===", file=sys.stderr)
-            print(f"User: {request.user}", file=sys.stderr)
-            print(f"Data: {request.data}", file=sys.stderr)
+        query = request.data.get("query", "")
+        if not query:
+            return Response({"error": "Query required"}, status=400)
 
-            from elasticsearch_dsl import Search
-            from elasticsearch_dsl.connections import connections
+        connections.configure(default={"hosts": "http://elasticsearch:9200"})
+        s = Search(index="documents")
+        s = s.query("match", text=query)
+        s = s.filter("term", user_id=request.user.id)
+        response = s.execute()
 
-            query = request.data.get("query", "")
+        results = [{"id": hit.id, "text": hit.text} for hit in response]
 
-            client = connections.get_connection()
-            s = Search(using=client, index="documents")
-            s = s.query("match", text=query)
-            s = s.filter("term", user_id=request.user.id)
-            response = s.execute()
-
-            return Response(
-                {"count": response.hits.total.value, "results": [{"id": hit.id, "text": hit.text} for hit in response]}
-            )
-        except Exception as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            return Response({"error": str(e)}, status=500)
+        return Response({"count": response.hits.total.value, "results": results})
 
 
-class PingView(APIView):
-    permission_classes = [permissions.AllowAny]
+class DocumentViewSet(viewsets.ModelViewSet):
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
-        return Response({"ping": "pong"})
+    def get_queryset(self):
+        return Document.objects.filter(user=self.request.user).order_by("-created_date")
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)

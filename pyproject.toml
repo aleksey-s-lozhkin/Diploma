@@ -16,8 +16,8 @@ drf-yasg = ">=1.21.15,<2.0.0"
 python-dotenv = ">=1.2.2,<2.0.0"
 gunicorn = ">=26.0.0,<27.0.0"
 django-htmx = ">=1.27.0,<2.0.0"
-djangorestframework-stubs = "^3.17.0"
 requests = "^2.34.2"
+django-redis = "^6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
@@ -27,6 +27,7 @@ flake8 = "^6.1"
 black = "^23.11"
 isort = "^5.12"
 pre-commit = "^3.5"
+djangorestframework-stubs = "^3.17.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -41,6 +42,6 @@ profile = "black"
 line_length = 120
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "app.settings"
+DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = "test_*.py"
 addopts = "--cov=documents --cov-report=html --cov-report=term"
