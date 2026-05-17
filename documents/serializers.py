@@ -44,6 +44,14 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_date"]
 
 
+class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
+    """Сериализатор для создания и обновления документа"""
+
+    class Meta:
+        model = Document
+        fields = ["rubrics", "text"]
+
+
 class SearchHistorySerializer(serializers.ModelSerializer):
     """Сериализатор для истории поиска"""
 

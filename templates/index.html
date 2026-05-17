@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block title %}Главная - Поиск документов{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h1 class="text-center mb-4">🔍 Поиск документов</h1>
+
+        <div class="card shadow">
+            <div class="card-body">
+
+                <!-- CSRF токен для HTMX -->
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+                <!-- Поисковая строка -->
+                <div class="mb-3">
+                    <input type="text"
+                           class="form-control form-control-lg"
+                           name="query"
+                           placeholder="Введите поисковый запрос..."
+                           hx-post="{% url 'search_results' %}"
+                           hx-trigger="keyup changed delay:300ms"
+                           hx-target="#search-results"
+                           hx-indicator="#spinner"
+                           autocomplete="off">
+                    <div id="spinner" class="htmx-indicator text-center mt-2">
+                        <div class="spinner-border text-primary" role="status"></div>
+                    </div>
+                </div>
+
+                <!-- Фильтр по рубрикам -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">📂 Фильтр по рубрике:</label>
+                    <select name="rubric"
+                            class="form-select"
+                            hx-post="{% url 'search_results' %}"
+                            hx-trigger="change"
+                            hx-target="#search-results"
+                            hx-include="[name='query']">
+                        <option value="">Все рубрики</option>
+                        <option value="технологии">Технологии</option>
+                        <option value="бизнес">Бизнес</option>
+                        <option value="наука">Наука</option>
+                        <option value="спорт">Спорт</option>
+                        <option value="it">IT</option>
+                        <option value="python">Python</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Результаты поиска -->
+        <div id="search-results" class="mt-4">
+            <div class="alert alert-info">Введите запрос для поиска</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

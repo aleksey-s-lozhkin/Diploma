@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}Мои документы{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>Мои документы</h2>
+        <a href="{% url 'document_create' %}" class="btn btn-primary mb-3">+ Новый документ</a>
+
+        <div id="documents-list">
+            {% if documents %}
+                {% for doc in documents %}
+                    <div class="card mb-2">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="mb-2">
+                                        {% for rubric in doc.rubrics %}
+                                            <span class="badge bg-secondary">{{ rubric }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    <p class="card-text">{{ doc.text|truncatewords:30 }}</p>
+                                    <small class="text-muted">📅 {{ doc.created_date|date:"d.m.Y H:i" }}</small>
+                                </div>
+                                <div>
+                                    <a href="{% url 'document_edit' doc.id %}" class="btn btn-sm btn-warning">✏️</a>
+                                    <button class="btn btn-sm btn-danger"
+                                            hx-delete="{% url 'document_delete' doc.id %}"
+                                            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                                            hx-target="#documents-list"
+                                            hx-confirm="Удалить документ?">
+                                        🗑️
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="alert alert-info">У вас пока нет документов. Создайте первый!</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">📊 Статистика</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Всего документов:</strong> {{ documents|length }}</p>
+                <p><strong>Всего поисков:</strong> {{ total_searches }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.http import JsonResponse
+from django.shortcuts import redirect
 from django.urls import include, path
 
 
@@ -11,4 +12,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("health/", health_check, name="health_check"),
     path("api/", include("documents.urls")),
+    path("", include("documents.urls_frontend")),
+    path("accounts/login/", lambda request: redirect("/login/")),
 ]

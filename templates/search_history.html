@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}История поиска{% endblock %}
+
+{% block content %}
+<h2>📜 История поиска</h2>
+
+{% if history %}
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Запрос</th>
+                    <th>Результатов</th>
+                    <th>Дата</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in history %}
+                <tr>
+                    <td>{{ item.query }}</td>
+                    <td>{{ item.results_count }}</td>
+                    <td>{{ item.created_at|date:"d.m.Y H:i:s" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <form method="post" action="{% url 'clear_history' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Очистить всю историю поиска?')">🗑️ Очистить историю</button>
+    </form>
+{% else %}
+    <div class="alert alert-info">История поиска пуста</div>
+{% endif %}
+{% endblock %}
