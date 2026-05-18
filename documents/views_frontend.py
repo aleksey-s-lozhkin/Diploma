@@ -1,6 +1,10 @@
+import re
+
+import bleach
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.core.files.storage import default_storage
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -9,6 +13,38 @@ from elasticsearch_dsl import Search
 from elasticsearch_dsl.connections import connections
 
 from .models import Document, SearchHistory
+from .utils import extract_text_from_file
+
+ALLOWED_TAGS = [
+    "p",
+    "br",
+    "b",
+    "i",
+    "u",
+    "strong",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "tr",
+    "td",
+    "th",
+    "thead",
+    "tbody",
+    "a",
+    "img",
+    "pre",
+    "code",
+    "blockquote",
+    "hr",
+    "div",
+    "span",
+]
 
 
 class LoginView(View):
@@ -76,37 +112,52 @@ class IndexView(View):
 @method_decorator(login_required, name="dispatch")
 class SearchResultsView(View):
     def post(self, request):
-        query = request.POST.get("query", "")
+        try:
+            query = request.POST.get("query", "")
 
-        if not query:
-            return render(request, "partials/search_results.html", {"results": [], "query": ""})
+            if not query:
+                return render(request, "partials/search_results.html", {"results": [], "query": ""})
 
-        connections.configure(default={"hosts": "http://elasticsearch:9200"})
-        s = Search(index="documents")
-        s = s.query("match", text=query)
-        s = s.filter("term", user_id=request.user.id)
-        s = s.highlight("text", fragment_size=200, number_of_fragments=2, pre_tags=["<mark>"], post_tags=["</mark>"])
-        response = s.execute()
-
-        SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
-
-        results = []
-        for hit in response:
-            highlights = []
-            if hasattr(hit.meta, "highlight") and "text" in hit.meta.highlight:
-                highlights = hit.meta.highlight.text
-
-            results.append(
-                {
-                    "id": hit.id,
-                    "rubrics": hit.rubrics,
-                    "text": hit.text,
-                    "created_date": hit.created_date,
-                    "highlights": highlights,
-                }
+            connections.configure(default={"hosts": "http://elasticsearch:9200"})
+            s = Search(index="documents")
+            s = s.query("match", text=query)
+            s = s.filter("term", user_id=request.user.id)
+            s = s.highlight(
+                "text",
+                fragment_size=300,
+                number_of_fragments=5,
+                pre_tags=["<mark>"],
+                post_tags=["</mark>"],
+                boundary_chars=" .,;:!?()[]{}\"' \n\t\r",
+                boundary_max_scan=50,
+                fragmenter="span",
             )
+            response = s.execute()
 
-        return render(request, "partials/search_results.html", {"results": results, "query": query})
+            SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
+
+            results = []
+            for hit in response:
+                highlights = []
+                if hasattr(hit.meta, "highlight") and "text" in hit.meta.highlight:
+                    for fragment in hit.meta.highlight.text:
+                        cleaned = re.sub(r"\s+", " ", fragment).strip()
+                        if cleaned:
+                            highlights.append(cleaned)
+
+                results.append(
+                    {
+                        "id": hit.id,
+                        "rubrics": hit.rubrics,
+                        "text": hit.text,
+                        "created_date": hit.created_date,
+                        "highlights": highlights,
+                    }
+                )
+
+            return render(request, "partials/search_results.html", {"results": results, "query": query})
+        except Exception as e:
+            return render(request, "partials/search_results.html", {"results": [], "query": query, "error": str(e)})
 
 
 @method_decorator(login_required, name="dispatch")
@@ -125,7 +176,44 @@ class DocumentCreateView(View):
     def post(self, request):
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
-        Document.objects.create(user=request.user, rubrics=rubrics, text=request.POST.get("text", ""))
+        html_text = request.POST.get("text", "")
+
+        # Очищаем HTML от опасных тегов
+        cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
+
+        # Обработка загруженного файла
+        uploaded_file = request.FILES.get("file")
+        file_name = ""
+        file_type = ""
+        extracted_text = ""
+
+        if uploaded_file:
+            file_name = uploaded_file.name
+            file_type = file_name.split(".")[-1].lower()
+
+            # Сохраняем файл
+            file_path = default_storage.save(f"temp/{uploaded_file.name}", uploaded_file)
+            full_path = default_storage.path(file_path)
+
+            # Извлекаем текст
+            extracted_text = extract_text_from_file(full_path, file_type)
+
+            # Удаляем временный файл
+            default_storage.delete(file_path)
+
+        # Используем HTML текст или извлечённый из файла
+        final_text = cleaned_text if cleaned_text else extracted_text
+
+        # Создаём документ
+        Document.objects.create(
+            user=request.user,
+            rubrics=rubrics,
+            text=final_text,
+            file=uploaded_file if uploaded_file else None,
+            file_name=file_name,
+            file_type=file_type,
+        )
+
         messages.success(request, "Документ успешно создан")
         return redirect("dashboard")
 
@@ -136,16 +224,24 @@ class DocumentEditView(View):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         rubrics_value = ", ".join(doc.rubrics) if doc.rubrics else ""
         return render(
-            request, "document_form.html", {"is_edit": True, "rubrics_value": rubrics_value, "text_value": doc.text}
+            request,
+            "document_form.html",
+            {"is_edit": True, "rubrics_value": rubrics_value, "text_value": doc.text, "doc": doc},
         )
 
     def post(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
+        html_text = request.POST.get("text", "")
+
+        # Очищаем HTML
+        cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
+
         doc.rubrics = rubrics
-        doc.text = request.POST.get("text", "")
+        doc.text = cleaned_text
         doc.save()
+
         messages.success(request, "Документ успешно обновлён")
         return redirect("dashboard")
 
@@ -171,3 +267,10 @@ class ClearHistoryView(View):
         SearchHistory.objects.filter(user=request.user).delete()
         messages.success(request, "История поиска очищена")
         return redirect("search_history")
+
+
+@method_decorator(login_required, name="dispatch")
+class DocumentDetailView(View):
+    def get(self, request, pk):
+        doc = get_object_or_404(Document, pk=pk, user=request.user)
+        return render(request, "document_detail.html", {"doc": doc})
