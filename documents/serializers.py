@@ -1,8 +1,40 @@
+import bleach
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from .models import Document, SearchHistory
+
+ALLOWED_TAGS = [
+    "p",
+    "br",
+    "b",
+    "i",
+    "u",
+    "strong",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "tr",
+    "td",
+    "th",
+    "thead",
+    "tbody",
+    "a",
+    "img",
+    "pre",
+    "code",
+    "blockquote",
+    "hr",
+    "div",
+    "span",
+]
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -50,6 +82,9 @@ class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = ["rubrics", "text"]
+
+    def validate_text(self, value):
+        return bleach.clean(value, tags=ALLOWED_TAGS, strip=True)
 
 
 class SearchHistorySerializer(serializers.ModelSerializer):

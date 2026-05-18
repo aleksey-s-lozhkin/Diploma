@@ -8,13 +8,9 @@ from .models import Document
 
 def invalidate_user_cache(user_id):
     """Очищает кэш для конкретного пользователя (для cache_page)"""
-    # Удаляем кэш дашборда (формат ключей Django)
-    cache.delete(f"views.decorators.cache.cache_header.dashboard_{user_id}")
-    cache.delete(f"views.decorators.cache.cache_page.dashboard_{user_id}")
-
-    # Удаляем кэш главной страницы (общий для всех)
-    cache.delete("views.decorators.cache.cache_header.index")
-    cache.delete("views.decorators.cache.cache_page.index")
+    # Удаляем кэш главной страницы
+    cache.delete("views.decorators.cache.cache_page.index.")
+    cache.delete("views.decorators.cache.cache_header.index.")
 
 
 @receiver(post_save, sender=Document)

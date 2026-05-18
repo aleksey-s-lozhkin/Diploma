@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "drf_yasg",
     "django_elasticsearch_dsl",
     "django_htmx",
+    "tinymce",
     # Local
     "documents",
 ]
@@ -188,6 +189,40 @@ CACHES = {
     }
 }
 
-# Кэширование сессий
-# SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-# SESSION_CACHE_ALIAS = 'default'
+# TinyMCE configuration
+TINYMCE_DEFAULT_CONFIG = {
+    "height": 500,
+    "width": "100%",
+    "menubar": "file edit view insert format tools table",
+    "plugins": [
+        "advlist",
+        "autolink",
+        "lists",
+        "link",
+        "image",
+        "charmap",
+        "preview",
+        "anchor",
+        "searchreplace",
+        "visualblocks",
+        "code",
+        "fullscreen",
+        "insertdatetime",
+        "media",
+        "table",
+        "paste",
+        "code",
+        "help",
+        "wordcount",
+    ],
+    "toolbar": [
+        "undo redo | bold italic underline strikethrough | fontselect fontsizeselect | formatselect",
+        "alignleft aligncenter alignright alignjustify | bullist numlist outdent indent",
+        "table | link image media | removeformat | code help",
+    ],
+    "branding": False,
+    "paste_data_images": True,
+}
+
+TINYMCE_JS_URL = "/static/tinymce/tinymce.min.js"
+TINYMCE_COMPRESSOR = False

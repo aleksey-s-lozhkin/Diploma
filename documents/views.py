@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Document
-from .serializers import DocumentSerializer, RegisterSerializer, UserSerializer
+from .serializers import DocumentCreateUpdateSerializer, DocumentSerializer, RegisterSerializer, UserSerializer
 
 
 def health_check(request):
@@ -80,6 +80,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Document.objects.filter(user=self.request.user).order_by("-created_date")
+
+    def get_serializer_class(self):
+        if self.action in ["create", "update", "partial_update"]:
+            return DocumentCreateUpdateSerializer
+        return DocumentSerializer
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

@@ -1,65 +1,72 @@
 {% if results %}
-    {% for doc in results %}
-        <div class="card mb-3 shadow-sm">
-            <div class="card-body">
-                <div class="mb-2">
-                    {% for rubric in doc.rubrics %}
-                        <span class="badge bg-secondary">{{ rubric }}</span>
-                    {% endfor %}
-                </div>
-                <p class="card-text">
-                    {% if doc.highlights %}
-                        {% for fragment in doc.highlights %}
-                            {{ fragment|safe }}...
-                        {% endfor %}
-                    {% else %}
-                        {{ doc.text|truncatewords:50 }}
-                    {% endif %}
-                </p>
-                <div class="d-flex justify-content-between align-items-center">
-                    <small class="text-muted">📅 {{ doc.created_date|date:"d.m.Y H:i" }}</small>
-                    <button type="button"
-                            class="btn btn-sm btn-outline-primary"
-                            data-bs-toggle="modal"
-                            data-bs-target="#docModal-{{ doc.id }}">
-                        📄 Быстрый просмотр
-                    </button>
-                </div>
-            </div>
+{% for doc in results %}
+<div class="card mb-3 shadow-sm">
+    <div class="card-body">
+        <div class="mb-2">
+            {% for rubric in doc.rubrics %}
+            <span class="badge bg-secondary">{{ rubric }}</span>
+            {% endfor %}
         </div>
+        <p class="card-text">
+            {% if doc.highlights %}
+            {% for fragment in doc.highlights %}
+            {{ fragment|safe }}…
+            {% endfor %}
+            <a href="{% url 'document_detail' doc.id %}" class="btn btn-sm btn-link">📖 Читать полностью</a>
+            {% else %}
+            {{ doc.text|striptags|truncatewords:50 }}…
+            <a href="{% url 'document_detail' doc.id %}" class="btn btn-sm btn-link">📖 Читать полностью</a>
+            {% endif %}
+        </p>
+        <div class="d-flex justify-content-between align-items-center">
+            <small class="text-muted">📅 {{ doc.created_date|date:"d.m.Y H:i" }}</small>
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary"
+                    data-bs-toggle="modal"
+                    data-bs-target="#docModal-{{ doc.id }}">
+                📄 Быстрый просмотр
+            </button>
+        </div>
+    </div>
+</div>
 
-        <!-- Модальное окно для документа -->
-        <div class="modal fade" id="docModal-{{ doc.id }}" tabindex="-1">
-            <div class="modal-dialog modal-lg modal-dialog-scrollable">
-                <div class="modal-content">
-                    <div class="modal-header bg-primary text-white">
-                        <h5 class="modal-title">
-                            Документ #{{ doc.id }}
-                            {% for rubric in doc.rubrics %}
-                                <span class="badge bg-light text-dark ms-2">{{ rubric }}</span>
-                            {% endfor %}
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p style="white-space: pre-wrap; line-height: 1.6;">{{ doc.text|linebreaks }}</p>
-                        <hr>
-                        <small class="text-muted">📅 Создан: {{ doc.created_date|date:"d.m.Y H:i" }}</small>
-                    </div>
-                    <div class="modal-footer">
-                        <a href="{% url 'document_edit' doc.id %}" class="btn btn-warning">
-                            ✏️ Редактировать
-                        </a>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            Закрыть
-                        </button>
-                    </div>
+<!-- Модальное окно для документа -->
+<div class="modal fade" id="docModal-{{ doc.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    📄 Документ #{{ doc.id }}
+                    {% for rubric in doc.rubrics %}
+                    <span class="badge bg-light text-dark ms-2">{{ rubric }}</span>
+                    {% endfor %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="document-content">
+                    {{ doc.text|safe }}
                 </div>
+                <hr>
+                <small class="text-muted">📅 Создан: {{ doc.created_date|date:"d.m.Y H:i" }}</small>
+            </div>
+            <div class="modal-footer">
+                <a href="{% url 'document_edit' doc.id %}" class="btn btn-warning">
+                    ✏️ Редактировать
+                </a>
+                <a href="{% url 'document_detail' doc.id %}" class="btn btn-outline-primary">
+                    📄 Открыть на отдельной странице
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    Закрыть
+                </button>
             </div>
         </div>
-    {% endfor %}
+    </div>
+</div>
+{% endfor %}
 {% elif query %}
-    <div class="alert alert-warning">По вашему запросу "{{ query }}" ничего не найдено</div>
+<div class="alert alert-warning">По вашему запросу "{{ query }}" ничего не найдено</div>
 {% else %}
-    <div class="alert alert-info">Введите запрос для поиска</div>
+<div class="alert alert-info">Введите запрос для поиска</div>
 {% endif %}
