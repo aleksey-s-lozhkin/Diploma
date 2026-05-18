@@ -226,3 +226,8 @@ TINYMCE_DEFAULT_CONFIG = {
 
 TINYMCE_JS_URL = "/static/tinymce/tinymce.min.js"
 TINYMCE_COMPRESSOR = False
+
+# Rate limiting
+RATELIMIT_USE_CACHE = "default"
+RATELIMIT_CACHE_PREFIX = "rl:"
+RATELIMIT_ENABLE = True

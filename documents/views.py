@@ -1,10 +1,13 @@
 from django.http import JsonResponse
+from elasticsearch_dsl import Search
+from elasticsearch_dsl.connections import connections
 from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Document
+from .rate_limit import check_rate_limit
 from .serializers import DocumentCreateUpdateSerializer, DocumentSerializer, RegisterSerializer, UserSerializer
 
 
@@ -56,8 +59,11 @@ class SearchView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        from elasticsearch_dsl import Search
-        from elasticsearch_dsl.connections import connections
+        user_id = request.user.id
+        is_allowed, remaining, retry_after = check_rate_limit(f"api_search_{user_id}", 30, 60)
+
+        if not is_allowed:
+            return Response({"error": f"Too many requests. Please wait {retry_after} seconds."}, status=429)
 
         query = request.data.get("query", "")
         if not query:
@@ -71,7 +77,9 @@ class SearchView(APIView):
 
         results = [{"id": hit.id, "text": hit.text} for hit in response]
 
-        return Response({"count": response.hits.total.value, "results": results})
+        return Response(
+            {"count": response.hits.total.value, "results": results, "rate_limit": {"remaining": remaining}}
+        )
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
