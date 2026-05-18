@@ -13,6 +13,7 @@ from elasticsearch_dsl import Search
 from elasticsearch_dsl.connections import connections
 
 from .models import Document, SearchHistory
+from .rate_limit import check_rate_limit
 from .utils import extract_text_from_file
 
 ALLOWED_TAGS = [
@@ -112,6 +113,20 @@ class IndexView(View):
 @method_decorator(login_required, name="dispatch")
 class SearchResultsView(View):
     def post(self, request):
+        user_id = request.user.id
+        is_allowed, remaining, retry_after = check_rate_limit(f"search_{user_id}", 20, 60)
+
+        if not is_allowed:
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": [],
+                    "query": request.POST.get("query", ""),
+                    "error": f"⏱️ Слишком много запросов. Подождите {retry_after} секунд.",
+                },
+            )
+
         try:
             query = request.POST.get("query", "")
 
