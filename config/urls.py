@@ -1,13 +1,13 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import JsonResponse
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import include, path
 
 
 def health_check(request):
-    return JsonResponse({"status": "ok", "service": "document-search", "database": "connected"})
+    return HttpResponse("OK")
 
 
 urlpatterns = [

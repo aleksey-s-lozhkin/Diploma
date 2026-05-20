@@ -65,4 +65,17 @@
         </div>
     </div>
 </div>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const searchQuery = urlParams.get('search');
+        if (searchQuery) {
+            const searchInput = document.querySelector('input[name="query"]');
+            if (searchInput) {
+                searchInput.value = searchQuery;
+                searchInput.dispatchEvent(new Event('keyup'));
+            }
+        }
+    });
+</script>
 {% endblock %}

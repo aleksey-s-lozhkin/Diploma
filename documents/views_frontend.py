@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core.files.storage import default_storage
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -289,3 +290,11 @@ class DocumentDetailView(View):
     def get(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         return render(request, "document_detail.html", {"doc": doc})
+
+
+@method_decorator(login_required, name="dispatch")
+class DeleteHistoryItemView(View):
+    def post(self, request, pk):
+        history = get_object_or_404(SearchHistory, pk=pk, user=request.user)
+        history.delete()
+        return JsonResponse({"status": "ok"})
