@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core.files.storage import default_storage
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -134,9 +135,14 @@ class SearchResultsView(View):
                 return render(request, "partials/search_results.html", {"results": [], "query": ""})
 
             connections.configure(default={"hosts": "http://elasticsearch:9200"})
-            s = Search(index="documents")
-            s = s.query("match", text=query)
-            s = s.filter("term", user_id=request.user.id)
+
+            s = Search(index="documents").query(
+                "bool",
+                must=[{"match": {"text": query}}],
+                should=[{"term": {"user_id": request.user.id}}, {"term": {"is_public": True}}],
+                minimum_should_match=1,
+            )
+
             s = s.highlight(
                 "text",
                 fragment_size=300,
@@ -147,6 +153,7 @@ class SearchResultsView(View):
                 boundary_max_scan=50,
                 fragmenter="span",
             )
+
             response = s.execute()
 
             SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
@@ -192,6 +199,7 @@ class DocumentCreateView(View):
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
         html_text = request.POST.get("text", "")
+        is_public = request.POST.get("is_public") == "on"
 
         # Очищаем HTML от опасных тегов
         cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
@@ -224,6 +232,7 @@ class DocumentCreateView(View):
             user=request.user,
             rubrics=rubrics,
             text=final_text,
+            is_public=is_public,
             file=uploaded_file if uploaded_file else None,
             file_name=file_name,
             file_type=file_type,
@@ -238,6 +247,7 @@ class DocumentEditView(View):
     def get(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         rubrics_value = ", ".join(doc.rubrics) if doc.rubrics else ""
+
         return render(
             request,
             "document_form.html",
@@ -249,12 +259,14 @@ class DocumentEditView(View):
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
         html_text = request.POST.get("text", "")
+        is_public = request.POST.get("is_public") == "on"
 
         # Очищаем HTML
         cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
 
         doc.rubrics = rubrics
         doc.text = cleaned_text
+        doc.is_public = is_public
         doc.save()
 
         messages.success(request, "Документ успешно обновлён")
@@ -289,3 +301,11 @@ class DocumentDetailView(View):
     def get(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         return render(request, "document_detail.html", {"doc": doc})
+
+
+@method_decorator(login_required, name="dispatch")
+class DeleteHistoryItemView(View):
+    def post(self, request, pk):
+        history = get_object_or_404(SearchHistory, pk=pk, user=request.user)
+        history.delete()
+        return JsonResponse({"status": "ok"})

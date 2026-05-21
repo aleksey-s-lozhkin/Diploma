@@ -70,9 +70,14 @@ class SearchView(APIView):
             return Response({"error": "Query required"}, status=400)
 
         connections.configure(default={"hosts": "http://elasticsearch:9200"})
-        s = Search(index="documents")
-        s = s.query("match", text=query)
-        s = s.filter("term", user_id=request.user.id)
+
+        s = Search(index="documents").query(
+            "bool",
+            must=[{"match": {"text": query}}],
+            should=[{"term": {"user_id": request.user.id}}, {"term": {"is_public": True}}],
+            minimum_should_match=1,
+        )
+
         response = s.execute()
 
         results = [{"id": hit.id, "text": hit.text} for hit in response]

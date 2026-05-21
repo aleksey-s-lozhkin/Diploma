@@ -11,6 +11,18 @@
     <script src="{% static 'js/htmx.min.js' %}"></script>
 
     <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        main {
+            flex: 1 0 auto;
+        }
+        footer {
+            flex-shrink: 0;
+        }
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: inline-block; }
         mark {
@@ -20,6 +32,12 @@
             color: #000;
         }
         .modal-body { max-height: 70vh; overflow-y: auto; }
+        .navbar-brand img {
+            height: 35px;
+            width: auto;
+            object-fit: contain;
+            border-radius: 8px;
+        }
     </style>
 
     <script>
@@ -47,47 +65,66 @@
     </script>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="{% url 'index' %}">📄 Поиск документов</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <div class="navbar-nav ms-auto">
-                    {% if user.is_authenticated %}
-                        <span class="nav-link">👋 {{ user.username }}</span>
-                        <a class="nav-link" href="{% url 'dashboard' %}">📁 Мои документы</a>
-                        <a class="nav-link" href="{% url 'search_history' %}">📜 История поиска</a>
-                        <a class="nav-link" href="{% url 'logout' %}">🚪 Выйти</a>
-                    {% else %}
-                        <a class="nav-link" href="{% url 'login' %}">🔑 Войти</a>
-                        <a class="nav-link" href="{% url 'register' %}">📝 Регистрация</a>
-                    {% endif %}
-                </div>
-            </div>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand d-flex align-items-center gap-2" href="{% url 'index' %}">
+            <img src="{% static 'images/logo.jpeg' %}" alt="Logo">
+            <span>Поиск документов</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                {% if user.is_authenticated %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle d-flex align-items-center gap-2" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                        <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white fw-bold" style="width: 35px; height: 35px; font-size: 14px;">
+                            {{ user.email|slice:":1"|upper }}
+                        </div>
+                        <span>{{ user.email }}</span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{% url 'dashboard' %}">📁 Мои документы</a></li>
+                        <li><a class="dropdown-item" href="{% url 'search_history' %}">📜 История поиска</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="{% url 'logout' %}">🚪 Выйти</a></li>
+                    </ul>
+                </li>
+                {% else %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'login' %}">🔑 Войти</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'register' %}">📝 Регистрация</a>
+                </li>
+                {% endif %}
+            </ul>
         </div>
-    </nav>
+    </div>
+</nav>
 
-    <main class="py-4">
-        <div class="container">
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-
-            {% block content %}{% endblock %}
+<main class="py-4">
+    <div class="container">
+        {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
-    </main>
+        {% endfor %}
+        {% endif %}
 
-    <footer class="text-center text-muted py-4 border-top mt-5">
-        <small>Поисковая система на Django + Elasticsearch + HTMX | Дипломный проект</small>
-    </footer>
+        {% block content %}{% endblock %}
+    </div>
+</main>
 
-    <script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
+<footer class="text-center text-muted py-4 border-top">
+    <div class="container">
+        <small>🔍 Поисковая система на Django + Elasticsearch + HTMX | Дипломный проект</small>
+    </div>
+</footer>
+
+<script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
 </body>
 </html>

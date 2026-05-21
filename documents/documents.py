@@ -43,6 +43,7 @@ class DocumentIndex(Document):
     text = fields.TextField(analyzer=russian_analyzer)
     created_date = fields.DateField()
     user_id = fields.IntegerField()
+    is_public = fields.BooleanField()
 
     class Django:
         model = DocumentModel

@@ -17,4 +17,5 @@ urlpatterns = [
     path("documents/<int:pk>/edit/", views_frontend.DocumentEditView.as_view(), name="document_edit"),
     path("documents/<int:pk>/delete/", views_frontend.DocumentDeleteView.as_view(), name="document_delete"),
     path("documents/<int:pk>/", views_frontend.DocumentDetailView.as_view(), name="document_detail"),
+    path("search/history/<int:pk>/delete/", views_frontend.DeleteHistoryItemView.as_view(), name="delete_history_item"),
 ]
