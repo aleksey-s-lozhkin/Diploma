@@ -231,3 +231,6 @@ TINYMCE_COMPRESSOR = False
 RATELIMIT_USE_CACHE = "default"
 RATELIMIT_CACHE_PREFIX = "rl:"
 RATELIMIT_ENABLE = True
+
+# user StrongPass123
+# admin admin

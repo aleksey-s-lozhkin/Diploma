@@ -19,16 +19,24 @@
                         <input type="text" name="rubrics" class="form-control" value="{{ rubrics_value }}">
                     </div>
 
+                    <div class="form-check mb-3">
+                        <input type="checkbox" name="is_public" id="is_public" class="form-check-input" {% if doc.is_public %}checked{% endif %}>
+                        <label class="form-check-label" for="is_public">
+                            🌍 Поделиться — документ будет доступен для поиска всем пользователям
+                        </label>
+                        <div class="form-text text-muted">Если включить, другие пользователи смогут найти этот документ</div>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label fw-bold">📎 Загрузить файл</label>
                         <input type="file" name="file" class="form-control" accept=".pdf,.docx,.xlsx,.txt">
-                        <div class="form-text">Поддерживаются PDF, DOCX, XLSX</div>
+                        <div class="form-text">Поддерживаются PDF, DOCX, XLSX, TXT</div>
                         {% if doc.file %}
-                            <div class="mt-2">
-                                <a href="{{ doc.file.url }}" class="btn btn-sm btn-outline-secondary" target="_blank">
-                                    📄 Текущий файл: {{ doc.file_name }}
-                                </a>
-                            </div>
+                        <div class="mt-2">
+                            <a href="{{ doc.file.url }}" class="btn btn-sm btn-outline-secondary" target="_blank">
+                                📄 Текущий файл: {{ doc.file_name }}
+                            </a>
+                        </div>
                         {% endif %}
                     </div>
 

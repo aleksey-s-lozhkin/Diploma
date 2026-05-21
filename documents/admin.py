@@ -28,7 +28,7 @@ class DocumentAdmin(admin.ModelAdmin):
     readonly_fields = ["created_date"]
 
     # Поля для редактирования
-    fields = ["user", "rubrics", "text", "created_date"]
+    fields = ["user", "rubrics", "text", "is_public", "file", "file_name", "file_type", "created_date"]
 
     # Действия
     actions = ["delete_selected"]

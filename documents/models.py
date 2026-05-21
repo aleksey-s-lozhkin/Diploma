@@ -7,6 +7,7 @@ class Document(models.Model):
     rubrics = models.JSONField(default=list)
     text = models.TextField(verbose_name="Текст документа (HTML)")
     created_date = models.DateTimeField(auto_now_add=True)
+    is_public = models.BooleanField(default=False, verbose_name="Публичный документ")
 
     # Поля для файлов
     file = models.FileField(upload_to="documents/%Y/%m/%d/", blank=True, null=True)
