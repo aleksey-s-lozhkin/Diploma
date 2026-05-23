@@ -1,6 +1,10 @@
 {% if error %}
     <div class="alert alert-warning">{{ error }}</div>
 {% elif results %}
+    <div class="mb-3">
+        <small class="text-muted">Найдено: {{ total }} документов</small>
+    </div>
+
     {% for doc in results %}
         <div class="card mb-3 shadow-sm">
             <div class="card-body">
@@ -17,37 +21,19 @@
                     </div>
                     <small class="text-muted">📅 {{ doc.created_date|date:"d.m.Y H:i" }}</small>
                 </div>
-                <div class="card-text">
-                    {% if doc.highlights %}
-                        {% for fragment in doc.highlights %}
-                            <div class="mb-2">
-                                {{ fragment|safe }}
-                            </div>
-                            {% if not forloop.last %}
-                                <hr class="my-2">
-                            {% endif %}
-                        {% endfor %}
-                    {% else %}
-                        {{ doc.text|striptags|truncatewords:50 }}
-                    {% endif %}
-                </div>
+                <div class="card-text">{{ doc.text|striptags|truncatewords:50 }}</div>
                 <div class="mt-3">
-                    <button type="button"
-                            class="btn btn-sm btn-outline-primary"
-                            data-bs-toggle="modal"
-                            data-bs-target="#docModal-{{ doc.id }}">
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#docModal-{{ doc.id }}">
                         📄 Быстрый просмотр
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- Модальное окно -->
         <div class="modal fade" id="docModal-{{ doc.id }}" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <div class="modal-content">
-                    <div class="modal-header"
-                         style="background: {% if doc.is_public %}linear-gradient(135deg, #28a745, #20c997){% else %}linear-gradient(135deg, #6c757d, #495057){% endif %};">
+                    <div class="modal-header" style="background: {% if doc.is_public %}linear-gradient(135deg, #28a745, #20c997){% else %}linear-gradient(135deg, #6c757d, #495057){% endif %};">
                         <h5 class="modal-title text-white">
                             📄 Документ #{{ doc.id }}
                             {% for rubric in doc.rubrics %}
@@ -64,24 +50,51 @@
                                 <span class="badge bg-secondary">🔒 Приватный документ</span>
                             {% endif %}
                         </div>
-                        <div class="document-content">
-                            {{ doc.text|linebreaks }}
-                        </div>
+                        <div class="document-content">{{ doc.text|linebreaks }}</div>
                         <hr>
                         <small class="text-muted">📅 Создан: {{ doc.created_date|date:"d.m.Y H:i" }}</small>
                     </div>
                     <div class="modal-footer">
-                        <a href="{% url 'document_detail' doc.id %}" class="btn btn-outline-primary">
-                            📄 Открыть на отдельной странице
-                        </a>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            Закрыть
-                        </button>
+                        <a href="{% url 'document_detail' doc.id %}" class="btn btn-outline-primary">📄 Открыть на отдельной странице</a>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
                     </div>
                 </div>
             </div>
         </div>
     {% endfor %}
+
+    {% if total_pages > 1 %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page > 1 %}
+            <li class="page-item">
+                <button class="page-link"
+                        hx-post="{% url 'search_results' %}"
+                        hx-vals='{"page": {{ page|add:"-1" }}, "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}"}'
+                        hx-target="#search-results"
+                        hx-swap="outerHTML">
+                    ← Предыдущая
+                </button>
+            </li>
+            {% endif %}
+
+            <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+
+            {% if page < total_pages %}
+            <li class="page-item">
+                <button class="page-link"
+                        hx-post="{% url 'search_results' %}"
+                        hx-vals='{"page": {{ page|add:"1" }}, "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}"}'
+                        hx-target="#search-results"
+                        hx-swap="outerHTML">
+                    Следующая →
+                </button>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
 {% elif query %}
     <div class="alert alert-warning">По вашему запросу "{{ query }}" ничего не найдено</div>
 {% else %}

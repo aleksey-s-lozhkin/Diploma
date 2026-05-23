@@ -58,4 +58,6 @@ debug.log
 
 # OS
 Thumbs.db
-EOF
+backups/
+*.sql
+*.sql.gz

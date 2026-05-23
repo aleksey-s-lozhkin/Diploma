@@ -11,34 +11,52 @@
             <div class="card-body">
 
                 {% if user.is_authenticated %}
-                <!-- CSRF токен для HTMX -->
                 <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 
-                <!-- Поисковая строка -->
                 <div class="mb-3">
                     <input type="text"
                            class="form-control form-control-lg"
                            name="query"
+                           id="search-query"
                            placeholder="Введите поисковый запрос..."
                            hx-post="{% url 'search_results' %}"
                            hx-trigger="keyup changed delay:300ms"
                            hx-target="#search-results"
                            hx-indicator="#spinner"
+                           hx-include="[name='rubric'], [name='privacy']"
                            autocomplete="off">
                     <div id="spinner" class="htmx-indicator text-center mt-2">
                         <div class="spinner-border text-primary" role="status"></div>
                     </div>
                 </div>
 
-                <!-- Фильтр по публичности -->
                 <div class="mb-3">
-                    <label class="form-label fw-bold">🔒 Тип доступа:</label>
-                    <select name="privacy"
+                    <label class="form-label fw-bold">📂 Рубрики:</label>
+                    <select name="rubric"
+                            id="rubric-select"
                             class="form-select"
                             hx-post="{% url 'search_results' %}"
                             hx-trigger="change"
                             hx-target="#search-results"
-                            hx-include="[name='query']">
+                            hx-indicator="#spinner"
+                            hx-include="[name='query'], [name='privacy']">
+                        <option value="">Все рубрики</option>
+                        {% for rubric in rubrics %}
+                        <option value="{{ rubric }}">{{ rubric }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">🔒 Тип доступа:</label>
+                    <select name="privacy"
+                            id="privacy-select"
+                            class="form-select"
+                            hx-post="{% url 'search_results' %}"
+                            hx-trigger="change"
+                            hx-target="#search-results"
+                            hx-indicator="#spinner"
+                            hx-include="[name='query'], [name='rubric']">
                         <option value="all">Все документы</option>
                         <option value="public">🌍 Только публичные</option>
                         <option value="private">🔒 Только мои</option>
@@ -56,24 +74,9 @@
             </div>
         </div>
 
-        <!-- Результаты поиска -->
         <div id="search-results" class="mt-4">
             <div class="alert alert-info">Введите запрос для поиска</div>
         </div>
     </div>
 </div>
-
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const searchQuery = urlParams.get('search');
-        if (searchQuery) {
-            const searchInput = document.querySelector('input[name="query"]');
-            if (searchInput) {
-                searchInput.value = searchQuery;
-                searchInput.dispatchEvent(new Event('keyup'));
-            }
-        }
-    });
-</script>
 {% endblock %}

@@ -8,7 +8,15 @@
         <div class="card shadow">
             <div class="card-header d-flex justify-content-between align-items-center"
                  style="background: {% if doc.is_public %}linear-gradient(135deg, #28a745, #20c997){% else %}linear-gradient(135deg, #6c757d, #495057){% endif %};">
-                <h4 class="mb-0 text-white">📄 Документ #{{ doc.id }}</h4>
+                <h4 class="mb-0 text-white">
+                    {% if doc.rubrics %}
+                        📁 {{ doc.rubrics|join:", " }}
+                    {% elif doc.file %}
+                        📎 {{ doc.file_name|default:"Файл" }}
+                    {% else %}
+                        📄 Документ #{{ doc.id }}
+                    {% endif %}
+                </h4>
                 <div>
                     {% for rubric in doc.rubrics %}
                         <span class="badge bg-light text-dark">{{ rubric }}</span>

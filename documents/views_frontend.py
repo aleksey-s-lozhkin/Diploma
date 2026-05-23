@@ -6,11 +6,14 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
+from django.views.decorators.cache import cache_page, never_cache
+from django.views.decorators.vary import vary_on_cookie
 from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
 from elasticsearch_dsl import Search
 from elasticsearch_dsl.connections import connections
@@ -57,6 +60,8 @@ class LogoutView(View):
         return redirect("index")
 
 
+@method_decorator(cache_page(60 * 2), name="dispatch")
+@method_decorator(vary_on_cookie, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class IndexView(View):
     def get(self, request):
@@ -68,6 +73,7 @@ class IndexView(View):
         return render(request, "index.html", {"rubrics": sorted(unique_rubrics)})
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class SearchResultsView(View):
     def post(self, request):
@@ -87,43 +93,42 @@ class SearchResultsView(View):
 
         try:
             query = request.POST.get("query", "")
-            rubric = request.POST.get("rubric", "")  # Получаем выбранную рубрику
+            rubric = request.POST.get("rubric", "")
             privacy = request.POST.get("privacy", "all")
+            page = int(request.POST.get("page", 1))
+            page_size = 20
 
             if not query:
                 return render(request, "partials/search_results.html", {"results": [], "query": ""})
 
             connections.configure(default={"hosts": "http://elasticsearch:9200"})
 
-            # Базовый поиск
             s = Search(index="documents").query(
                 "bool",
                 must=[{"match": {"text": query}}],
+            )
+
+            s = s.query(
+                "bool",
                 should=[{"term": {"user_id": request.user.id}}, {"term": {"is_public": True}}],
                 minimum_should_match=1,
             )
 
-            # Фильтр по рубрике (если выбрана)
             if rubric and rubric != "":
-                s = s.query("term", rubrics=rubric)
+                s = s.query("match", rubrics=rubric)
 
-            # Фильтр по приватности
             if privacy == "public":
                 s = s.query("term", is_public=True)
             elif privacy == "private":
                 s = s.query("term", user_id=request.user.id)
 
-            s = s.highlight(
-                "text",
-                fragment_size=300,
-                number_of_fragments=3,
-                pre_tags=["<mark>"],
-                post_tags=["</mark>"],
-            )
+            start = (page - 1) * page_size
+            s = s[start : start + page_size]
 
             response = s.execute()
 
-            SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
+            if page == 1:
+                SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
 
             results = []
             for hit in response:
@@ -145,31 +150,54 @@ class SearchResultsView(View):
                     }
                 )
 
-            return render(request, "partials/search_results.html", {"results": results, "query": query})
+            total = response.hits.total.value
+            total_pages = (total + page_size - 1) // page_size
+
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": results,
+                    "query": query,
+                    "page": page,
+                    "total_pages": total_pages,
+                    "total": total,
+                    "rubric": rubric,
+                    "privacy": privacy,
+                },
+            )
         except Exception as e:
             return render(request, "partials/search_results.html", {"results": [], "query": query, "error": str(e)})
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class DashboardView(View):
     def get(self, request):
-        # Получаем параметр show_public (по умолчанию False - только свои)
         show_public = request.GET.get("show_public") == "true"
+        page = int(request.GET.get("page", 1))
+        page_size = 6
 
         if show_public:
-            # Показываем свои и публичные чужие
-            from django.db.models import Q
-
-            documents = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).order_by("-created_date")
+            documents_list = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).order_by("-created_date")
         else:
-            # Показываем только свои
-            documents = Document.objects.filter(user=request.user).order_by("-created_date")
+            documents_list = Document.objects.filter(user=request.user).order_by("-created_date")
+
+        paginator = Paginator(documents_list, page_size)
+        documents = paginator.get_page(page)
 
         total_searches = SearchHistory.objects.filter(user=request.user).count()
+
         return render(
             request,
             "dashboard.html",
-            {"documents": documents, "total_searches": total_searches, "show_public": show_public},
+            {
+                "documents": documents,
+                "total_searches": total_searches,
+                "show_public": show_public,
+                "page": page,
+                "total_pages": paginator.num_pages,
+            },
         )
 
 
@@ -255,11 +283,26 @@ class DocumentDeleteView(View):
         return HttpResponseClientRefresh()
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class SearchHistoryView(View):
     def get(self, request):
-        history = SearchHistory.objects.filter(user=request.user).order_by("-created_at")
-        return render(request, "search_history.html", {"history": history})
+        page = int(request.GET.get("page", 1))
+        page_size = 20
+
+        history_list = SearchHistory.objects.filter(user=request.user).order_by("-created_at")
+        paginator = Paginator(history_list, page_size)
+        history = paginator.get_page(page)
+
+        return render(
+            request,
+            "search_history.html",
+            {
+                "history": history,
+                "page": page,
+                "total_pages": paginator.num_pages,
+            },
+        )
 
 
 @method_decorator(login_required, name="dispatch")
@@ -270,6 +313,7 @@ class ClearHistoryView(View):
         return redirect("search_history")
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class DocumentDetailView(View):
     def get(self, request, pk):
@@ -293,3 +337,16 @@ class TogglePublicView(View):
         doc.save()
         messages.success(request, f"Статус документа #{doc.id} изменён")
         return redirect(request.META.get("HTTP_REFERER", "dashboard"))
+
+
+@method_decorator(cache_page(60 * 60), name="dispatch")
+@method_decorator(login_required, name="dispatch")
+class GetRubricsView(View):
+    def get(self, request):
+        rubrics = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).values_list("rubrics", flat=True)
+        unique_rubrics = set()
+        for rubrics_list in rubrics:
+            for rubric in rubrics_list:
+                unique_rubrics.add(rubric)
+
+        return render(request, "partials/rubrics_select.html", {"rubrics": sorted(unique_rubrics)})
