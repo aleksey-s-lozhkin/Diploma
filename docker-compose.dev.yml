@@ -67,6 +67,7 @@ services:
       - ./static:/app/static
       - ./media:/app/media
       - ./logs:/app/logs
+      - ./templates:/app/templates
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
       - DEBUG=True

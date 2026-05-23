@@ -8,30 +8,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Document
 from .rate_limit import check_rate_limit
-from .serializers import DocumentCreateUpdateSerializer, DocumentSerializer, RegisterSerializer, UserSerializer
+from .serializers import DocumentCreateUpdateSerializer, DocumentSerializer
 
 
 def health_check(request):
     return JsonResponse({"status": "ok"})
-
-
-class RegisterView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            refresh = RefreshToken.for_user(user)
-            return Response(
-                {
-                    "user": UserSerializer(user).data,
-                    "refresh": str(refresh),
-                    "access": str(refresh.access_token),
-                },
-                status=status.HTTP_201_CREATED,
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LogoutView(APIView):
@@ -51,6 +32,9 @@ class UserProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        # Используем сериализатор для кастомной модели
+        from users.serializers import UserSerializer
+
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
 

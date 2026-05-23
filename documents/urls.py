@@ -17,7 +17,6 @@ router.register(r"documents", views.DocumentViewSet, basename="document")
 
 urlpatterns = [
     path("health/", health_check, name="health"),
-    path("auth/register/", views.RegisterView.as_view(), name="register"),
     path("auth/login/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/verify/", TokenVerifyView.as_view(), name="token_verify"),

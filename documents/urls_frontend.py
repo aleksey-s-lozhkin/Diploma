@@ -5,8 +5,6 @@ from django.views.decorators.vary import vary_on_cookie
 from . import views_frontend
 
 urlpatterns = [
-    path("login/", views_frontend.LoginView.as_view(), name="login"),
-    path("register/", views_frontend.RegisterView.as_view(), name="register"),
     path("logout/", views_frontend.LogoutView.as_view(), name="logout"),
     path("", cache_page(60 * 2)(vary_on_cookie(views_frontend.IndexView.as_view())), name="index"),
     path("dashboard/", views_frontend.DashboardView.as_view(), name="dashboard"),

@@ -1,0 +1,6 @@
+[flake8]
+exclude =
+    */tests.py,
+    */migrations/*,
+    manage.py
+max-line-length = 120

@@ -1,6 +1,4 @@
 import bleach
-from django.contrib.auth.models import User
-from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from .models import Document, SearchHistory
@@ -37,43 +35,16 @@ ALLOWED_TAGS = [
 ]
 
 
-class UserSerializer(serializers.ModelSerializer):
-    """Сериализатор для пользователя"""
-
-    class Meta:
-        model = User
-        fields = ["id", "username", "email", "date_joined"]
-        read_only_fields = ["id", "date_joined"]
-
-
-class RegisterSerializer(serializers.ModelSerializer):
-    """Сериализатор для регистрации"""
-
-    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
-    password2 = serializers.CharField(write_only=True, required=True)
-
-    class Meta:
-        model = User
-        fields = ["username", "password", "password2", "email"]
-
-    def validate(self, attrs):
-        if attrs["password"] != attrs["password2"]:
-            raise serializers.ValidationError({"password": "Password fields didn't match."})
-        return attrs
-
-    def create(self, validated_data):
-        validated_data.pop("password2")
-        user = User.objects.create_user(**validated_data)
-        return user
-
-
 class DocumentSerializer(serializers.ModelSerializer):
     """Сериализатор для документа"""
 
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+
     class Meta:
         model = Document
-        fields = ["id", "rubrics", "text", "created_date"]
-        read_only_fields = ["id", "created_date"]
+        fields = ["id", "rubrics", "text", "created_date", "is_public", "user_email", "user_id"]
+        read_only_fields = ["id", "created_date", "user_email", "user_id"]
 
 
 class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
@@ -81,10 +52,17 @@ class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Document
-        fields = ["rubrics", "text"]
+        fields = ["rubrics", "text", "is_public"]
 
     def validate_text(self, value):
         return bleach.clean(value, tags=ALLOWED_TAGS, strip=True)
+
+    def validate_rubrics(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Рубрики должны быть списком")
+        if len(value) > 10:
+            raise serializers.ValidationError("Не более 10 рубрик")
+        return value
 
 
 class SearchHistorySerializer(serializers.ModelSerializer):

@@ -14,6 +14,11 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
+AUTH_USER_MODEL = "users.User"
+AUTHENTICATION_BACKENDS = [
+    "users.backends.EmailAuthBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -31,6 +36,7 @@ INSTALLED_APPS = [
     "django_elasticsearch_dsl",
     "django_htmx",
     # Local
+    "users",
     "documents",
 ]
 
@@ -206,3 +212,7 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 # EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 # EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 # DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+
+DEFAULT_FROM_EMAIL = "noreply@docsearch.com"
+VERIFICATION_EMAIL_TITLE = "Подтверждение email"
+VERIFICATION_TOKEN_EXPIRATION_DAYS = 1

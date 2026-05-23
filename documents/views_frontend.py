@@ -1,8 +1,10 @@
+import os
 import re
 
 import bleach
+from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -46,57 +48,6 @@ ALLOWED_TAGS = [
     "div",
     "span",
 ]
-
-
-class LoginView(View):
-    def get(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-        return render(request, "login.html")
-
-    def post(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-
-        username = request.POST.get("username")
-        password = request.POST.get("password")
-        user = authenticate(request, username=username, password=password)
-        if user:
-            login(request, user)
-            return redirect("dashboard")
-        messages.error(request, "Неверное имя пользователя или пароль")
-        return render(request, "login.html")
-
-
-class RegisterView(View):
-    def get(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-        return render(request, "register.html")
-
-    def post(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-
-        from django.contrib.auth.models import User
-
-        username = request.POST.get("username")
-        password1 = request.POST.get("password1")
-        password2 = request.POST.get("password2")
-
-        if password1 != password2:
-            messages.error(request, "Пароли не совпадают")
-        elif len(password1) < 8:
-            messages.error(request, "Пароль должен содержать не менее 8 символов")
-        elif User.objects.filter(username=username).exists():
-            messages.error(request, "Пользователь с таким именем уже существует")
-        else:
-            user = User.objects.create_user(username=username, password=password1)
-            login(request, user)
-            messages.success(request, f"Добро пожаловать, {username}!")
-            return redirect("dashboard")
-
-        return render(request, "register.html")
 
 
 class LogoutView(View):
@@ -173,7 +124,7 @@ class SearchResultsView(View):
                         "text": hit.text,
                         "created_date": hit.created_date,
                         "highlights": highlights,
-                        "is_public": hit.is_public,  # <-- ДОБАВЛЕНО
+                        "is_public": hit.is_public,
                     }
                 )
 
@@ -211,7 +162,6 @@ class DocumentCreateView(View):
         raw_text = request.POST.get("text", "")
         is_public = request.POST.get("is_public") == "on"
 
-        # По умолчанию — ручной ввод
         text_source = "manual"
         final_text = raw_text
         uploaded_file = request.FILES.get("file")
@@ -221,11 +171,10 @@ class DocumentCreateView(View):
             file_type = file_name.split(".")[-1].lower()
             text_source = "file"
 
-            # Сначала создаём документ с файлом (но без текста)
             doc = Document.objects.create(
                 user=request.user,
                 rubrics=rubrics,
-                text="",  # Временный текст
+                text="",
                 is_public=is_public,
                 file=uploaded_file,
                 file_name=file_name,
@@ -233,22 +182,14 @@ class DocumentCreateView(View):
                 text_source=text_source,
             )
 
-            # Теперь файл сохранён, извлекаем текст из него
-            import os
-
-            from django.conf import settings
-
             file_path = os.path.join(settings.MEDIA_ROOT, doc.file.name)
             extracted_text = extract_text_from_file(file_path, file_type)
-
-            # Обновляем документ с извлечённым текстом
             doc.text = extracted_text
             doc.save()
 
             messages.success(request, "Документ успешно создан")
             return redirect("dashboard")
 
-        # Без файла — просто создаём
         cleaned_text = bleach.clean(final_text, tags=ALLOWED_TAGS, strip=True)
         Document.objects.create(
             user=request.user,
@@ -306,12 +247,9 @@ class DeleteHistoryItemView(View):
 
 @method_decorator(login_required, name="dispatch")
 class TogglePublicView(View):
-    """Переключает статус публичности документа"""
-
     def post(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         doc.is_public = not doc.is_public
         doc.save()
         messages.success(request, f"Статус документа #{doc.id} изменён")
-        # Просто редирект обратно на страницу, откуда пришли
         return redirect(request.META.get("HTTP_REFERER", "dashboard"))
