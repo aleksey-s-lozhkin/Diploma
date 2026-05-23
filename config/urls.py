@@ -16,7 +16,6 @@ urlpatterns = [
     path("api/", include("documents.urls")),
     path("", include("documents.urls_frontend")),
     path("accounts/login/", lambda request: redirect("/login/")),
-    path("tinymce/", include("tinymce.urls")),
 ]
 
 if settings.DEBUG:

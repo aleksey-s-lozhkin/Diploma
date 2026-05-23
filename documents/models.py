@@ -5,7 +5,7 @@ from django.db import models
 class Document(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="documents")
     rubrics = models.JSONField(default=list)
-    text = models.TextField(verbose_name="Текст документа (HTML)")
+    text = models.TextField(verbose_name="Текст документа")
     created_date = models.DateTimeField(auto_now_add=True)
     is_public = models.BooleanField(default=False, verbose_name="Публичный документ")
 

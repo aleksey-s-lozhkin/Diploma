@@ -198,11 +198,11 @@ class DocumentCreateView(View):
     def post(self, request):
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
-        html_text = request.POST.get("text", "")
+        raw_text = request.POST.get("text", "")
         is_public = request.POST.get("is_public") == "on"
 
         # Очищаем HTML от опасных тегов
-        cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
+        cleaned_text = bleach.clean(raw_text, tags=ALLOWED_TAGS, strip=True)
 
         # Обработка загруженного файла
         uploaded_file = request.FILES.get("file")
