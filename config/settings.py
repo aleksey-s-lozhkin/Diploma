@@ -14,6 +14,11 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
+AUTH_USER_MODEL = "users.User"
+AUTHENTICATION_BACKENDS = [
+    "users.backends.EmailAuthBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -30,8 +35,8 @@ INSTALLED_APPS = [
     "drf_yasg",
     "django_elasticsearch_dsl",
     "django_htmx",
-    "tinymce",
     # Local
+    "users",
     "documents",
 ]
 
@@ -189,48 +194,25 @@ CACHES = {
     }
 }
 
-# TinyMCE configuration
-TINYMCE_DEFAULT_CONFIG = {
-    "height": 500,
-    "width": "100%",
-    "menubar": "file edit view insert format tools table",
-    "plugins": [
-        "advlist",
-        "autolink",
-        "lists",
-        "link",
-        "image",
-        "charmap",
-        "preview",
-        "anchor",
-        "searchreplace",
-        "visualblocks",
-        "code",
-        "fullscreen",
-        "insertdatetime",
-        "media",
-        "table",
-        "paste",
-        "code",
-        "help",
-        "wordcount",
-    ],
-    "toolbar": [
-        "undo redo | bold italic underline strikethrough | fontselect fontsizeselect | formatselect",
-        "alignleft aligncenter alignright alignjustify | bullist numlist outdent indent",
-        "table | link image media | removeformat | code help",
-    ],
-    "branding": False,
-    "paste_data_images": True,
-}
-
-TINYMCE_JS_URL = "/static/tinymce/tinymce.min.js"
-TINYMCE_COMPRESSOR = False
-
 # Rate limiting
 RATELIMIT_USE_CACHE = "default"
 RATELIMIT_CACHE_PREFIX = "rl:"
 RATELIMIT_ENABLE = True
 
-# user StrongPass123
-# admin admin
+# Email settings
+# Для отладки (письма в консоль)
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Для продакшена (раскомментировать и закомментировать console)
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.yandex.ru')
+# EMAIL_PORT = int(os.getenv('EMAIL_PORT', 465))
+# EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False') == 'True'
+# EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'True') == 'True'
+# EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+# EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+# DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+
+DEFAULT_FROM_EMAIL = "noreply@docsearch.com"
+VERIFICATION_EMAIL_TITLE = "Подтверждение email"
+VERIFICATION_TOKEN_EXPIRATION_DAYS = 1

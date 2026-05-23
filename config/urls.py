@@ -14,9 +14,9 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("health/", health_check, name="health_check"),
     path("api/", include("documents.urls")),
+    path("", include("users.urls")),
     path("", include("documents.urls_frontend")),
     path("accounts/login/", lambda request: redirect("/login/")),
-    path("tinymce/", include("tinymce.urls")),
 ]
 
 if settings.DEBUG:

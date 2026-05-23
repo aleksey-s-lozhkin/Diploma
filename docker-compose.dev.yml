@@ -67,9 +67,10 @@ services:
       - ./static:/app/static
       - ./media:/app/media
       - ./logs:/app/logs
+      - ./templates:/app/templates
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
-      - DEBUG=False
+      - DEBUG=True
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-dev-secret-key-change-in-production}
       - POSTGRES_DB=docsearch
       - POSTGRES_USER=postgres

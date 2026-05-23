@@ -1,14 +1,14 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}{% if is_edit %}Редактирование документа{% else %}Новый документ{% endif %}{% endblock %}
+{% block title %}Новый документ{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-10">
         <div class="card shadow">
             <div class="card-header bg-primary text-white">
-                <h4 class="mb-0">{% if is_edit %}✏️ Редактирование{% else %}📝 Новый документ{% endif %}</h4>
+                <h4 class="mb-0">📝 Новый документ</h4>
             </div>
             <div class="card-body">
                 <form method="post" enctype="multipart/form-data">
@@ -17,10 +17,11 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold">📂 Рубрики (через запятую)</label>
                         <input type="text" name="rubrics" class="form-control" value="{{ rubrics_value }}">
+                        <div class="form-text">Пример: технологии, python, django</div>
                     </div>
 
                     <div class="form-check mb-3">
-                        <input type="checkbox" name="is_public" id="is_public" class="form-check-input" {% if doc.is_public %}checked{% endif %}>
+                        <input type="checkbox" name="is_public" id="is_public" class="form-check-input">
                         <label class="form-check-label" for="is_public">
                             🌍 Поделиться — документ будет доступен для поиска всем пользователям
                         </label>
@@ -29,22 +30,15 @@
 
                     <div class="mb-3">
                         <label class="form-label fw-bold">📎 Загрузить файл</label>
-                        <input type="file" name="file" class="form-control" accept=".pdf,.docx,.xlsx,.txt">
+                        <input type="file" name="file" id="file-input" class="form-control" accept=".pdf,.docx,.xlsx,.txt">
                         <div class="form-text">Поддерживаются PDF, DOCX, XLSX, TXT</div>
-                        {% if doc.file %}
-                        <div class="mt-2">
-                            <a href="{{ doc.file.url }}" class="btn btn-sm btn-outline-secondary" target="_blank">
-                                📄 Текущий файл: {{ doc.file_name }}
-                            </a>
-                        </div>
-                        {% endif %}
                     </div>
 
                     <hr>
 
                     <div class="mb-3">
-                        <label class="form-label fw-bold">✏️ Или введите текст с форматированием</label>
-                        <textarea name="text" id="id_text" class="form-control" rows="15">{{ text_value }}</textarea>
+                        <label class="form-label fw-bold">✏️ Или введите текст вручную</label>
+                        <textarea name="text" id="id_text" class="form-control" rows="15"></textarea>
                     </div>
 
                     <div class="d-flex justify-content-between">
@@ -56,18 +50,4 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script src="{% static 'tinymce/tinymce.min.js' %}"></script>
-<script>
-    tinymce.init({
-        selector: '#id_text',
-        height: 500,
-        menubar: 'file edit view insert format tools table',
-        plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table paste code help wordcount',
-        toolbar: 'undo redo | bold italic underline | bullist numlist outdent indent | table | removeformat',
-        branding: false,
-    });
-</script>
 {% endblock %}

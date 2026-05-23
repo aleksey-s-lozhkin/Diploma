@@ -1,15 +1,20 @@
+import os
 import re
 
 import bleach
+from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
-from django.core.files.storage import default_storage
+from django.core.paginator import Paginator
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
-from django_htmx.http import HttpResponseClientRefresh
+from django.views.decorators.cache import cache_page, never_cache
+from django.views.decorators.vary import vary_on_cookie
+from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
 from elasticsearch_dsl import Search
 from elasticsearch_dsl.connections import connections
 
@@ -49,68 +54,26 @@ ALLOWED_TAGS = [
 ]
 
 
-class LoginView(View):
-    def get(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-        return render(request, "login.html")
-
-    def post(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-
-        username = request.POST.get("username")
-        password = request.POST.get("password")
-        user = authenticate(request, username=username, password=password)
-        if user:
-            login(request, user)
-            return redirect("dashboard")
-        messages.error(request, "Неверное имя пользователя или пароль")
-        return render(request, "login.html")
-
-
-class RegisterView(View):
-    def get(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-        return render(request, "register.html")
-
-    def post(self, request):
-        if request.user.is_authenticated:
-            return redirect("dashboard")
-
-        from django.contrib.auth.models import User
-
-        username = request.POST.get("username")
-        password1 = request.POST.get("password1")
-        password2 = request.POST.get("password2")
-
-        if password1 != password2:
-            messages.error(request, "Пароли не совпадают")
-        elif len(password1) < 8:
-            messages.error(request, "Пароль должен содержать не менее 8 символов")
-        elif User.objects.filter(username=username).exists():
-            messages.error(request, "Пользователь с таким именем уже существует")
-        else:
-            user = User.objects.create_user(username=username, password=password1)
-            login(request, user)
-            messages.success(request, f"Добро пожаловать, {username}!")
-            return redirect("dashboard")
-
-        return render(request, "register.html")
-
-
 class LogoutView(View):
     def get(self, request):
         logout(request)
         return redirect("index")
 
 
+@method_decorator(cache_page(60 * 2), name="dispatch")
+@method_decorator(vary_on_cookie, name="dispatch")
+@method_decorator(login_required, name="dispatch")
 class IndexView(View):
     def get(self, request):
-        return render(request, "index.html", {"user": request.user})
+        rubrics = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).values_list("rubrics", flat=True)
+        unique_rubrics = set()
+        for rubrics_list in rubrics:
+            for rubric in rubrics_list:
+                unique_rubrics.add(rubric)
+        return render(request, "index.html", {"rubrics": sorted(unique_rubrics)})
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class SearchResultsView(View):
     def post(self, request):
@@ -130,6 +93,10 @@ class SearchResultsView(View):
 
         try:
             query = request.POST.get("query", "")
+            rubric = request.POST.get("rubric", "")
+            privacy = request.POST.get("privacy", "all")
+            page = int(request.POST.get("page", 1))
+            page_size = 20
 
             if not query:
                 return render(request, "partials/search_results.html", {"results": [], "query": ""})
@@ -139,24 +106,29 @@ class SearchResultsView(View):
             s = Search(index="documents").query(
                 "bool",
                 must=[{"match": {"text": query}}],
+            )
+
+            s = s.query(
+                "bool",
                 should=[{"term": {"user_id": request.user.id}}, {"term": {"is_public": True}}],
                 minimum_should_match=1,
             )
 
-            s = s.highlight(
-                "text",
-                fragment_size=300,
-                number_of_fragments=5,
-                pre_tags=["<mark>"],
-                post_tags=["</mark>"],
-                boundary_chars=" .,;:!?()[]{}\"' \n\t\r",
-                boundary_max_scan=50,
-                fragmenter="span",
-            )
+            if rubric and rubric != "":
+                s = s.query("match", rubrics=rubric)
+
+            if privacy == "public":
+                s = s.query("term", is_public=True)
+            elif privacy == "private":
+                s = s.query("term", user_id=request.user.id)
+
+            start = (page - 1) * page_size
+            s = s[start : start + page_size]
 
             response = s.execute()
 
-            SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
+            if page == 1:
+                SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
 
             results = []
             for hit in response:
@@ -174,102 +146,131 @@ class SearchResultsView(View):
                         "text": hit.text,
                         "created_date": hit.created_date,
                         "highlights": highlights,
+                        "is_public": hit.is_public,
                     }
                 )
 
-            return render(request, "partials/search_results.html", {"results": results, "query": query})
+            total = response.hits.total.value
+            total_pages = (total + page_size - 1) // page_size
+
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": results,
+                    "query": query,
+                    "page": page,
+                    "total_pages": total_pages,
+                    "total": total,
+                    "rubric": rubric,
+                    "privacy": privacy,
+                },
+            )
         except Exception as e:
             return render(request, "partials/search_results.html", {"results": [], "query": query, "error": str(e)})
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class DashboardView(View):
     def get(self, request):
-        documents = Document.objects.filter(user=request.user).order_by("-created_date")
+        show_public = request.GET.get("show_public") == "true"
+        page = int(request.GET.get("page", 1))
+        page_size = 6
+
+        if show_public:
+            documents_list = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).order_by("-created_date")
+        else:
+            documents_list = Document.objects.filter(user=request.user).order_by("-created_date")
+
+        paginator = Paginator(documents_list, page_size)
+        documents = paginator.get_page(page)
+
         total_searches = SearchHistory.objects.filter(user=request.user).count()
-        return render(request, "dashboard.html", {"documents": documents, "total_searches": total_searches})
+
+        return render(
+            request,
+            "dashboard.html",
+            {
+                "documents": documents,
+                "total_searches": total_searches,
+                "show_public": show_public,
+                "page": page,
+                "total_pages": paginator.num_pages,
+            },
+        )
 
 
 @method_decorator(login_required, name="dispatch")
 class DocumentCreateView(View):
     def get(self, request):
-        return render(request, "document_form.html", {"is_edit": False, "rubrics_value": "", "text_value": ""})
+        return render(
+            request,
+            "document_form.html",
+            {
+                "is_edit": False,
+                "rubrics_value": "",
+                "text_value": "",
+                "text_source": "manual",
+                "is_file_uploaded": False,
+            },
+        )
 
     def post(self, request):
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
-        html_text = request.POST.get("text", "")
+        raw_text = request.POST.get("text", "")
         is_public = request.POST.get("is_public") == "on"
 
-        # Очищаем HTML от опасных тегов
-        cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
-
-        # Обработка загруженного файла
+        text_source = "manual"
+        final_text = raw_text
         uploaded_file = request.FILES.get("file")
-        file_name = ""
-        file_type = ""
-        extracted_text = ""
 
         if uploaded_file:
             file_name = uploaded_file.name
             file_type = file_name.split(".")[-1].lower()
+            text_source = "file"
 
-            # Сохраняем файл
-            file_path = default_storage.save(f"temp/{uploaded_file.name}", uploaded_file)
-            full_path = default_storage.path(file_path)
+            doc = Document.objects.create(
+                user=request.user,
+                rubrics=rubrics,
+                text="",
+                is_public=is_public,
+                file=uploaded_file,
+                file_name=file_name,
+                file_type=file_type,
+                text_source=text_source,
+            )
 
-            # Извлекаем текст
-            extracted_text = extract_text_from_file(full_path, file_type)
+            file_path = os.path.join(settings.MEDIA_ROOT, doc.file.name)
+            extracted_text = extract_text_from_file(file_path, file_type)
+            doc.text = extracted_text
+            doc.save()
 
-            # Удаляем временный файл
-            default_storage.delete(file_path)
+            messages.success(request, "Документ успешно создан")
+            if request.htmx:
+                response = HttpResponseClientRedirect("/dashboard/")
+                response["HX-Trigger"] = "rubricsUpdated"
+                return response
+            return redirect("dashboard")
 
-        # Используем HTML текст или извлечённый из файла
-        final_text = cleaned_text if cleaned_text else extracted_text
-
-        # Создаём документ
+        cleaned_text = bleach.clean(final_text, tags=ALLOWED_TAGS, strip=True)
         Document.objects.create(
             user=request.user,
             rubrics=rubrics,
-            text=final_text,
+            text=cleaned_text,
             is_public=is_public,
-            file=uploaded_file if uploaded_file else None,
-            file_name=file_name,
-            file_type=file_type,
+            file=None,
+            file_name="",
+            file_type="",
+            text_source=text_source,
         )
 
         messages.success(request, "Документ успешно создан")
-        return redirect("dashboard")
-
-
-@method_decorator(login_required, name="dispatch")
-class DocumentEditView(View):
-    def get(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk, user=request.user)
-        rubrics_value = ", ".join(doc.rubrics) if doc.rubrics else ""
-
-        return render(
-            request,
-            "document_form.html",
-            {"is_edit": True, "rubrics_value": rubrics_value, "text_value": doc.text, "doc": doc},
-        )
-
-    def post(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk, user=request.user)
-        rubrics_str = request.POST.get("rubrics", "")
-        rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
-        html_text = request.POST.get("text", "")
-        is_public = request.POST.get("is_public") == "on"
-
-        # Очищаем HTML
-        cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
-
-        doc.rubrics = rubrics
-        doc.text = cleaned_text
-        doc.is_public = is_public
-        doc.save()
-
-        messages.success(request, "Документ успешно обновлён")
+        if request.htmx:
+            response = HttpResponseClientRedirect("/dashboard/")
+            response["HX-Trigger"] = "rubricsUpdated"
+            return response
         return redirect("dashboard")
 
 
@@ -278,14 +279,30 @@ class DocumentDeleteView(View):
     def delete(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         doc.delete()
+        messages.success(request, f"Документ #{pk} удалён")
         return HttpResponseClientRefresh()
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class SearchHistoryView(View):
     def get(self, request):
-        history = SearchHistory.objects.filter(user=request.user).order_by("-created_at")
-        return render(request, "search_history.html", {"history": history})
+        page = int(request.GET.get("page", 1))
+        page_size = 20
+
+        history_list = SearchHistory.objects.filter(user=request.user).order_by("-created_at")
+        paginator = Paginator(history_list, page_size)
+        history = paginator.get_page(page)
+
+        return render(
+            request,
+            "search_history.html",
+            {
+                "history": history,
+                "page": page,
+                "total_pages": paginator.num_pages,
+            },
+        )
 
 
 @method_decorator(login_required, name="dispatch")
@@ -296,6 +313,7 @@ class ClearHistoryView(View):
         return redirect("search_history")
 
 
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class DocumentDetailView(View):
     def get(self, request, pk):
@@ -309,3 +327,26 @@ class DeleteHistoryItemView(View):
         history = get_object_or_404(SearchHistory, pk=pk, user=request.user)
         history.delete()
         return JsonResponse({"status": "ok"})
+
+
+@method_decorator(login_required, name="dispatch")
+class TogglePublicView(View):
+    def post(self, request, pk):
+        doc = get_object_or_404(Document, pk=pk, user=request.user)
+        doc.is_public = not doc.is_public
+        doc.save()
+        messages.success(request, f"Статус документа #{doc.id} изменён")
+        return redirect(request.META.get("HTTP_REFERER", "dashboard"))
+
+
+@method_decorator(cache_page(60 * 60), name="dispatch")
+@method_decorator(login_required, name="dispatch")
+class GetRubricsView(View):
+    def get(self, request):
+        rubrics = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).values_list("rubrics", flat=True)
+        unique_rubrics = set()
+        for rubrics_list in rubrics:
+            for rubric in rubrics_list:
+                unique_rubrics.add(rubric)
+
+        return render(request, "partials/rubrics_select.html", {"rubrics": sorted(unique_rubrics)})

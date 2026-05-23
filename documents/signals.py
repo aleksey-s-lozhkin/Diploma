@@ -7,10 +7,19 @@ from .models import Document
 
 
 def invalidate_user_cache(user_id):
-    """Очищает кэш для конкретного пользователя (для cache_page)"""
-    # Удаляем кэш главной страницы
+    """Очищает кэш для конкретного пользователя"""
+    # Удаляем кэш рубрик
+    cache.delete(f"rubrics_user_{user_id}")
+    # Удаляем кэш статистики дашборда
+    cache.delete(f"dashboard_stats_user_{user_id}")
+    # Удаляем кэш количества документов
+    cache.delete(f"user_docs_count_{user_id}")
+    # Удаляем кэш главной страницы (кэшируется через vary_on_cookie)
     cache.delete("views.decorators.cache.cache_page.index.")
     cache.delete("views.decorators.cache.cache_header.index.")
+    # Удаляем кэш страницы с пагинацией (если есть)
+    cache.delete_pattern("*rubrics*")
+    cache.delete_pattern(f"*dashboard*user_{user_id}*")
 
 
 @receiver(post_save, sender=Document)
@@ -33,3 +42,16 @@ def delete_document(sender, instance, **kwargs):
         invalidate_user_cache(instance.user.id)
     except Exception as e:
         print(f"Error deleting document {instance.id} from index: {e}")
+
+
+# Дополнительный сигнал для очистки кэша при изменении публичности
+@receiver(post_save, sender=Document)
+def clear_cache_on_public_change(sender, instance, **kwargs):
+    """Очищает кэш при изменении статуса публичности документа"""
+    try:
+        # Проверяем, изменилось ли поле is_public
+        if hasattr(instance, "_original_is_public"):
+            if instance._original_is_public != instance.is_public:
+                invalidate_user_cache(instance.user.id)
+    except AttributeError:
+        pass

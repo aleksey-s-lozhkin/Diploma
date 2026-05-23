@@ -3,56 +3,137 @@
 {% block title %}Мои документы{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-8">
-        <h2>Мои документы</h2>
-        <a href="{% url 'document_create' %}" class="btn btn-primary mb-3">+ Новый документ</a>
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 
-        <div id="documents-list">
-            {% if documents %}
-                {% for doc in documents %}
-                    <div class="card mb-2">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <div class="mb-2">
-                                        {% for rubric in doc.rubrics %}
-                                            <span class="badge bg-secondary">{{ rubric }}</span>
-                                        {% endfor %}
-                                    </div>
-                                    <p class="card-text">{{ doc.text|truncatewords:30 }}</p>
-                                    <small class="text-muted">📅 {{ doc.created_date|date:"d.m.Y H:i" }}</small>
-                                </div>
-                                <div>
-                                    <a href="{% url 'document_edit' doc.id %}" class="btn btn-sm btn-warning">✏️</a>
-                                    <button class="btn btn-sm btn-danger"
-                                            hx-delete="{% url 'document_delete' doc.id %}"
-                                            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                            hx-target="#documents-list"
-                                            hx-confirm="Удалить документ?">
-                                        🗑️
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>📄 Мои документы</h1>
+        <div>
+            <a href="?show_public=true" class="btn btn-outline-primary {% if show_public %}active{% endif %}">
+                🌍 Показать публичные
+            </a>
+            <a href="?show_public=false" class="btn btn-outline-secondary {% if not show_public %}active{% endif %}">
+                🔒 Только мои
+            </a>
+            <a href="{% url 'document_create' %}" class="btn btn-success">
+                + Создать документ
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body">
+                    <p class="text-muted">📊 Всего поисковых запросов: {{ total_searches }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if documents %}
+    <div class="row mt-4">
+        {% for doc in documents %}
+        <div class="col-md-6 mb-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="card-title mb-0">
+                            {% if doc.rubrics %}
+                            {% with first_rubric=doc.rubrics|first %}
+                            📁 {{ first_rubric }}
+                            {% if doc.rubrics|length > 1 %}
+                            <span class="badge bg-secondary">+{{ doc.rubrics|length|add:-1 }}</span>
+                            {% endif %}
+                            {% endwith %}
+                            {% elif doc.file %}
+                            📎 {{ doc.file_name|truncatechars:25 }}
+                            {% else %}
+                            📄 Документ от {{ doc.created_date|date:"d.m.Y" }}
+                            {% endif %}
+                        </h5>
+                        <small class="text-muted">{{ doc.created_date|date:"d.m.Y H:i" }}</small>
                     </div>
-                {% endfor %}
-            {% else %}
-                <div class="alert alert-info">У вас пока нет документов. Создайте первый!</div>
-            {% endif %}
+                    <div class="mb-2">
+                        {% for rubric in doc.rubrics|slice:":3" %}
+                        <span class="badge bg-secondary">{{ rubric }}</span>
+                        {% endfor %}
+                        {% if doc.rubrics|length > 3 %}
+                        <span class="badge bg-secondary">+{{ doc.rubrics|length|add:-3 }}</span>
+                        {% endif %}
+                        {% if doc.is_public %}
+                        <span class="badge bg-success">🌍 Публичный</span>
+                        {% else %}
+                        <span class="badge bg-secondary">🔒 Приватный</span>
+                        {% endif %}
+                    </div>
+                    <p class="card-text">{{ doc.text|striptags|truncatewords:30 }}</p>
+                    <div class="mt-3">
+                        <a href="{% url 'document_detail' doc.id %}" class="btn btn-sm btn-outline-primary">📄 Открыть</a>
+                        <button class="btn btn-sm btn-outline-danger delete-doc" data-id="{{ doc.id }}">🗑️ Удалить</button>
+                    </div>
+                </div>
+            </div>
         </div>
+        {% endfor %}
     </div>
 
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">📊 Статистика</h5>
-            </div>
-            <div class="card-body">
-                <p><strong>Всего документов:</strong> {{ documents|length }}</p>
-                <p><strong>Всего поисков:</strong> {{ total_searches }}</p>
-            </div>
-        </div>
+    <!-- Пагинация -->
+    {% if documents.has_other_pages %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if documents.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ documents.previous_page_number }}{% if show_public %}&show_public=true{% endif %}">← Предыдущая</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">← Предыдущая</span></li>
+            {% endif %}
+
+            {% for p in documents.paginator.page_range %}
+            {% if documents.number == p %}
+            <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+            {% elif p > documents.number|add:'-3' and p < documents.number|add:'3' %}
+            <li class="page-item"><a class="page-link" href="?page={{ p }}{% if show_public %}&show_public=true{% endif %}">{{ p }}</a></li>
+            {% endif %}
+            {% endfor %}
+
+            {% if documents.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ documents.next_page_number }}{% if show_public %}&show_public=true{% endif %}">Следующая →</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">Следующая →</span></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <div class="alert alert-info mt-4">
+        У вас пока нет документов.
+        <a href="{% url 'document_create' %}" class="alert-link">Создать первый документ</a>
     </div>
+    {% endif %}
 </div>
+
+<script>
+    function getCSRFToken() {
+        let csrf = document.querySelector('[name=csrfmiddlewaretoken]');
+        return csrf ? csrf.value : '';
+    }
+
+    document.querySelectorAll('.delete-doc').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (confirm('Удалить документ?')) {
+                fetch('/documents/' + this.dataset.id + '/delete/', {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': getCSRFToken()
+                    }
+                }).then(() => location.reload());
+            }
+        });
+    });
+</script>
 {% endblock %}
