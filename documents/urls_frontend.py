@@ -14,8 +14,8 @@ urlpatterns = [
     path("search/history/", views_frontend.SearchHistoryView.as_view(), name="search_history"),
     path("search/history/clear/", views_frontend.ClearHistoryView.as_view(), name="clear_history"),
     path("documents/create/", views_frontend.DocumentCreateView.as_view(), name="document_create"),
-    path("documents/<int:pk>/edit/", views_frontend.DocumentEditView.as_view(), name="document_edit"),
     path("documents/<int:pk>/delete/", views_frontend.DocumentDeleteView.as_view(), name="document_delete"),
     path("documents/<int:pk>/", views_frontend.DocumentDetailView.as_view(), name="document_detail"),
     path("search/history/<int:pk>/delete/", views_frontend.DeleteHistoryItemView.as_view(), name="delete_history_item"),
+    path("documents/<int:pk>/toggle-public/", views_frontend.TogglePublicView.as_view(), name="toggle_public"),
 ]

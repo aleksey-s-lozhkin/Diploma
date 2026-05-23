@@ -14,6 +14,15 @@ class Document(models.Model):
     file_name = models.CharField(max_length=255, blank=True)
     file_type = models.CharField(max_length=20, blank=True)
 
+    # Поле как был создан текст
+    TEXT_SOURCE_CHOICES = [
+        ("file", "Из загруженного файла"),
+        ("manual", "Ручной ввод"),
+    ]
+    text_source = models.CharField(
+        max_length=10, choices=TEXT_SOURCE_CHOICES, default="manual", verbose_name="Источник текста"
+    )
+
     def __str__(self):
         return f"Document #{self.id}"
 

@@ -4,7 +4,6 @@ import bleach
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
-from django.core.files.storage import default_storage
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
@@ -174,6 +173,7 @@ class SearchResultsView(View):
                         "text": hit.text,
                         "created_date": hit.created_date,
                         "highlights": highlights,
+                        "is_public": hit.is_public,  # <-- ДОБАВЛЕНО
                     }
                 )
 
@@ -193,7 +193,17 @@ class DashboardView(View):
 @method_decorator(login_required, name="dispatch")
 class DocumentCreateView(View):
     def get(self, request):
-        return render(request, "document_form.html", {"is_edit": False, "rubrics_value": "", "text_value": ""})
+        return render(
+            request,
+            "document_form.html",
+            {
+                "is_edit": False,
+                "rubrics_value": "",
+                "text_value": "",
+                "text_source": "manual",
+                "is_file_uploaded": False,
+            },
+        )
 
     def post(self, request):
         rubrics_str = request.POST.get("rubrics", "")
@@ -201,75 +211,57 @@ class DocumentCreateView(View):
         raw_text = request.POST.get("text", "")
         is_public = request.POST.get("is_public") == "on"
 
-        # Очищаем HTML от опасных тегов
-        cleaned_text = bleach.clean(raw_text, tags=ALLOWED_TAGS, strip=True)
-
-        # Обработка загруженного файла
+        # По умолчанию — ручной ввод
+        text_source = "manual"
+        final_text = raw_text
         uploaded_file = request.FILES.get("file")
-        file_name = ""
-        file_type = ""
-        extracted_text = ""
 
         if uploaded_file:
             file_name = uploaded_file.name
             file_type = file_name.split(".")[-1].lower()
+            text_source = "file"
 
-            # Сохраняем файл
-            file_path = default_storage.save(f"temp/{uploaded_file.name}", uploaded_file)
-            full_path = default_storage.path(file_path)
+            # Сначала создаём документ с файлом (но без текста)
+            doc = Document.objects.create(
+                user=request.user,
+                rubrics=rubrics,
+                text="",  # Временный текст
+                is_public=is_public,
+                file=uploaded_file,
+                file_name=file_name,
+                file_type=file_type,
+                text_source=text_source,
+            )
 
-            # Извлекаем текст
-            extracted_text = extract_text_from_file(full_path, file_type)
+            # Теперь файл сохранён, извлекаем текст из него
+            import os
 
-            # Удаляем временный файл
-            default_storage.delete(file_path)
+            from django.conf import settings
 
-        # Используем HTML текст или извлечённый из файла
-        final_text = cleaned_text if cleaned_text else extracted_text
+            file_path = os.path.join(settings.MEDIA_ROOT, doc.file.name)
+            extracted_text = extract_text_from_file(file_path, file_type)
 
-        # Создаём документ
+            # Обновляем документ с извлечённым текстом
+            doc.text = extracted_text
+            doc.save()
+
+            messages.success(request, "Документ успешно создан")
+            return redirect("dashboard")
+
+        # Без файла — просто создаём
+        cleaned_text = bleach.clean(final_text, tags=ALLOWED_TAGS, strip=True)
         Document.objects.create(
             user=request.user,
             rubrics=rubrics,
-            text=final_text,
+            text=cleaned_text,
             is_public=is_public,
-            file=uploaded_file if uploaded_file else None,
-            file_name=file_name,
-            file_type=file_type,
+            file=None,
+            file_name="",
+            file_type="",
+            text_source=text_source,
         )
 
         messages.success(request, "Документ успешно создан")
-        return redirect("dashboard")
-
-
-@method_decorator(login_required, name="dispatch")
-class DocumentEditView(View):
-    def get(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk, user=request.user)
-        rubrics_value = ", ".join(doc.rubrics) if doc.rubrics else ""
-
-        return render(
-            request,
-            "document_form.html",
-            {"is_edit": True, "rubrics_value": rubrics_value, "text_value": doc.text, "doc": doc},
-        )
-
-    def post(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk, user=request.user)
-        rubrics_str = request.POST.get("rubrics", "")
-        rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
-        html_text = request.POST.get("text", "")
-        is_public = request.POST.get("is_public") == "on"
-
-        # Очищаем HTML
-        cleaned_text = bleach.clean(html_text, tags=ALLOWED_TAGS, strip=True)
-
-        doc.rubrics = rubrics
-        doc.text = cleaned_text
-        doc.is_public = is_public
-        doc.save()
-
-        messages.success(request, "Документ успешно обновлён")
         return redirect("dashboard")
 
 
@@ -278,6 +270,7 @@ class DocumentDeleteView(View):
     def delete(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
         doc.delete()
+        messages.success(request, f"Документ #{pk} удалён")
         return HttpResponseClientRefresh()
 
 
@@ -309,3 +302,16 @@ class DeleteHistoryItemView(View):
         history = get_object_or_404(SearchHistory, pk=pk, user=request.user)
         history.delete()
         return JsonResponse({"status": "ok"})
+
+
+@method_decorator(login_required, name="dispatch")
+class TogglePublicView(View):
+    """Переключает статус публичности документа"""
+
+    def post(self, request, pk):
+        doc = get_object_or_404(Document, pk=pk, user=request.user)
+        doc.is_public = not doc.is_public
+        doc.save()
+        messages.success(request, f"Статус документа #{doc.id} изменён")
+        # Просто редирект обратно на страницу, откуда пришли
+        return redirect(request.META.get("HTTP_REFERER", "dashboard"))

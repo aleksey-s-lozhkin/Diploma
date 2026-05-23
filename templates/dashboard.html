@@ -14,24 +14,111 @@
                     <div class="card mb-2">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start">
-                                <div>
+                                <div class="flex-grow-1">
                                     <div class="mb-2">
                                         {% for rubric in doc.rubrics %}
                                             <span class="badge bg-secondary">{{ rubric }}</span>
                                         {% endfor %}
+
+                                        {% if doc.is_public %}
+                                            <span class="badge bg-success">🌍 Публичный</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">🔒 Приватный</span>
+                                        {% endif %}
+
+                                        {% if doc.text_source == 'file' %}
+                                            <span class="badge bg-info">📄 Из файла</span>
+                                        {% else %}
+                                            <span class="badge bg-warning text-dark">✏️ Ручной ввод</span>
+                                        {% endif %}
                                     </div>
                                     <p class="card-text">{{ doc.text|truncatewords:30 }}</p>
                                     <small class="text-muted">📅 {{ doc.created_date|date:"d.m.Y H:i" }}</small>
                                 </div>
-                                <div>
-                                    <a href="{% url 'document_edit' doc.id %}" class="btn btn-sm btn-warning">✏️</a>
+                                <div class="ms-3">
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-primary mb-1"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#docModal-{{ doc.id }}"
+                                            title="Быстрый просмотр">
+                                        👁️
+                                    </button>
                                     <button class="btn btn-sm btn-danger"
                                             hx-delete="{% url 'document_delete' doc.id %}"
                                             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                                             hx-target="#documents-list"
-                                            hx-confirm="Удалить документ?">
+                                            hx-confirm="Удалить документ?"
+                                            title="Удалить">
                                         🗑️
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Модальное окно для быстрого просмотра -->
+                    <div class="modal fade" id="docModal-{{ doc.id }}" tabindex="-1">
+                        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                            <div class="modal-content">
+                                <div class="modal-header"
+                                     style="background: {% if doc.is_public %}linear-gradient(135deg, #28a745, #20c997){% else %}linear-gradient(135deg, #6c757d, #495057){% endif %};">
+                                    <h5 class="modal-title text-white">
+                                        📄 Документ #{{ doc.id }}
+                                        {% for rubric in doc.rubrics %}
+                                            <span class="badge bg-light text-dark ms-2">{{ rubric }}</span>
+                                        {% endfor %}
+                                    </h5>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                                    <div class="mb-3">
+                                        {% if doc.is_public %}
+                                            <span class="badge bg-success">🌍 Публичный документ</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">🔒 Приватный документ</span>
+                                        {% endif %}
+                                        {% if doc.text_source == 'file' %}
+                                            <span class="badge bg-info">📄 Из файла</span>
+                                        {% else %}
+                                            <span class="badge bg-warning text-dark">✏️ Ручной ввод</span>
+                                        {% endif %}
+                                    </div>
+
+                                    {% if doc.file_type == 'pdf' and doc.file %}
+                                        <div class="mt-2">
+                                            <iframe src="{{ doc.file.url }}" width="100%" height="400px" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+                                        </div>
+                                    {% else %}
+                                        <div class="document-content" style="white-space: pre-wrap; line-height: 1.6; max-height: 400px; overflow-y: auto;">
+                                            {{ doc.text|linebreaks }}
+                                        </div>
+                                    {% endif %}
+
+                                    <hr>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <small class="text-muted">📅 Создан: {{ doc.created_date|date:"d.m.Y H:i" }}</small>
+                                        <div>
+                                            <!-- Обычная форма без HTMX, с перезагрузкой страницы -->
+                                            <form method="post" action="{% url 'toggle_public' doc.id %}" class="d-inline">
+                                                {% csrf_token %}
+                                                {% if doc.is_public %}
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                        🔒 Сделать приватным
+                                                    </button>
+                                                {% else %}
+                                                    <button type="submit" class="btn btn-sm btn-outline-success">
+                                                        🌍 Сделать публичным
+                                                    </button>
+                                                {% endif %}
+                                            </form>
+                                            <a href="{% url 'document_detail' doc.id %}" class="btn btn-sm btn-outline-primary ms-2">
+                                                📄 Подробнее
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-secondary ms-2" data-bs-dismiss="modal">
+                                                Закрыть
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -55,4 +142,12 @@
         </div>
     </div>
 </div>
+
+<script>
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.target.id === 'documents-list') {
+            setTimeout(() => location.reload(), 300);
+        }
+    });
+</script>
 {% endblock %}

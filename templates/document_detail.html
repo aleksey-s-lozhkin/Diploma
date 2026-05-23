@@ -6,12 +6,23 @@
 <div class="row justify-content-center">
     <div class="col-md-10">
         <div class="card shadow">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h4 class="mb-0">📄 Документ #{{ doc.id }}</h4>
+            <div class="card-header d-flex justify-content-between align-items-center"
+                 style="background: {% if doc.is_public %}linear-gradient(135deg, #28a745, #20c997){% else %}linear-gradient(135deg, #6c757d, #495057){% endif %};">
+                <h4 class="mb-0 text-white">📄 Документ #{{ doc.id }}</h4>
                 <div>
                     {% for rubric in doc.rubrics %}
                         <span class="badge bg-light text-dark">{{ rubric }}</span>
                     {% endfor %}
+                    {% if doc.is_public %}
+                        <span class="badge bg-light text-success ms-2">🌍 Публичный</span>
+                    {% else %}
+                        <span class="badge bg-light text-secondary ms-2">🔒 Приватный</span>
+                    {% endif %}
+                    {% if doc.text_source == 'file' %}
+                        <span class="badge bg-info text-white ms-2">📄 Из файла</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark ms-2">✏️ Ручной ввод</span>
+                    {% endif %}
                 </div>
             </div>
             <div class="card-body">
@@ -25,14 +36,49 @@
                     {% endfor %}
                 </div>
 
-                <!-- Оригинальный файл -->
+                <!-- Статус публичности с переключателем -->
                 <div class="mb-3">
-                    <strong>📎 Файл:</strong> {{ doc.file_name|default:"текстовый документ" }}
+                    <strong>🔒 Статус:</strong>
+                    <form method="post" action="{% url 'toggle_public' doc.id %}" class="d-inline">
+                        {% csrf_token %}
+                        {% if doc.is_public %}
+                            <span class="badge bg-success">Доступен всем пользователям</span>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary ms-2">
+                                Сделать приватным
+                            </button>
+                        {% else %}
+                            <span class="badge bg-secondary">Только вам</span>
+                            <button type="submit" class="btn btn-sm btn-outline-success ms-2">
+                                Сделать публичным
+                            </button>
+                        {% endif %}
+                    </form>
+                    <small class="text-muted ms-2">Документ виден в поиске другим пользователям, если публичный</small>
                 </div>
 
-                <!-- Просмотр PDF (если файл PDF) -->
-                {% if doc.file_type == 'pdf' %}
+                <!-- Информация о файле -->
+                <div class="mb-3">
+                    <strong>📎 Источник:</strong>
+                    {% if doc.file %}
+                        Файл: {{ doc.file_name }}
+                        {% if doc.file_type == 'pdf' %}
+                            <span class="badge bg-danger">PDF</span>
+                        {% elif doc.file_type == 'docx' %}
+                            <span class="badge bg-primary">DOCX</span>
+                        {% elif doc.file_type == 'xlsx' %}
+                            <span class="badge bg-success">XLSX</span>
+                        {% elif doc.file_type == 'txt' %}
+                            <span class="badge bg-secondary">TXT</span>
+                        {% endif %}
+                    {% else %}
+                        Текстовый документ (ручной ввод)
+                    {% endif %}
+                </div>
+
+                <!-- Просмотр PDF -->
+                {% if doc.file_type == 'pdf' and doc.file %}
                     <div class="mt-3">
+                        <strong>📄 Предпросмотр PDF:</strong>
                         <iframe src="{{ doc.file.url }}" width="100%" height="700px" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
                     </div>
                 {% elif doc.file %}
@@ -53,11 +99,12 @@
                 {% endif %}
 
                 <hr>
-                <small class="text-muted">📅 Создан: {{ doc.created_date|date:"d.m.Y H:i" }}</small>
-            </div>
-            <div class="card-footer">
-                <a href="{% url 'dashboard' %}" class="btn btn-secondary">← Назад к документам</a>
-                <a href="{% url 'document_edit' doc.id %}" class="btn btn-warning">✏️ Редактировать</a>
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">📅 Создан: {{ doc.created_date|date:"d.m.Y H:i" }}</small>
+                    <div>
+                        <a href="{% url 'dashboard' %}" class="btn btn-secondary">← Назад</a>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
