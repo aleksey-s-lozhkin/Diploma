@@ -6,11 +6,12 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
-from django_htmx.http import HttpResponseClientRefresh
+from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
 from elasticsearch_dsl import Search
 from elasticsearch_dsl.connections import connections
 
@@ -56,9 +57,15 @@ class LogoutView(View):
         return redirect("index")
 
 
+@method_decorator(login_required, name="dispatch")
 class IndexView(View):
     def get(self, request):
-        return render(request, "index.html", {"user": request.user})
+        rubrics = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).values_list("rubrics", flat=True)
+        unique_rubrics = set()
+        for rubrics_list in rubrics:
+            for rubric in rubrics_list:
+                unique_rubrics.add(rubric)
+        return render(request, "index.html", {"rubrics": sorted(unique_rubrics)})
 
 
 @method_decorator(login_required, name="dispatch")
@@ -80,12 +87,15 @@ class SearchResultsView(View):
 
         try:
             query = request.POST.get("query", "")
+            rubric = request.POST.get("rubric", "")  # Получаем выбранную рубрику
+            privacy = request.POST.get("privacy", "all")
 
             if not query:
                 return render(request, "partials/search_results.html", {"results": [], "query": ""})
 
             connections.configure(default={"hosts": "http://elasticsearch:9200"})
 
+            # Базовый поиск
             s = Search(index="documents").query(
                 "bool",
                 must=[{"match": {"text": query}}],
@@ -93,15 +103,22 @@ class SearchResultsView(View):
                 minimum_should_match=1,
             )
 
+            # Фильтр по рубрике (если выбрана)
+            if rubric and rubric != "":
+                s = s.query("term", rubrics=rubric)
+
+            # Фильтр по приватности
+            if privacy == "public":
+                s = s.query("term", is_public=True)
+            elif privacy == "private":
+                s = s.query("term", user_id=request.user.id)
+
             s = s.highlight(
                 "text",
                 fragment_size=300,
-                number_of_fragments=5,
+                number_of_fragments=3,
                 pre_tags=["<mark>"],
                 post_tags=["</mark>"],
-                boundary_chars=" .,;:!?()[]{}\"' \n\t\r",
-                boundary_max_scan=50,
-                fragmenter="span",
             )
 
             response = s.execute()
@@ -136,9 +153,24 @@ class SearchResultsView(View):
 @method_decorator(login_required, name="dispatch")
 class DashboardView(View):
     def get(self, request):
-        documents = Document.objects.filter(user=request.user).order_by("-created_date")
+        # Получаем параметр show_public (по умолчанию False - только свои)
+        show_public = request.GET.get("show_public") == "true"
+
+        if show_public:
+            # Показываем свои и публичные чужие
+            from django.db.models import Q
+
+            documents = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).order_by("-created_date")
+        else:
+            # Показываем только свои
+            documents = Document.objects.filter(user=request.user).order_by("-created_date")
+
         total_searches = SearchHistory.objects.filter(user=request.user).count()
-        return render(request, "dashboard.html", {"documents": documents, "total_searches": total_searches})
+        return render(
+            request,
+            "dashboard.html",
+            {"documents": documents, "total_searches": total_searches, "show_public": show_public},
+        )
 
 
 @method_decorator(login_required, name="dispatch")
@@ -188,6 +220,10 @@ class DocumentCreateView(View):
             doc.save()
 
             messages.success(request, "Документ успешно создан")
+            if request.htmx:
+                response = HttpResponseClientRedirect("/dashboard/")
+                response["HX-Trigger"] = "rubricsUpdated"
+                return response
             return redirect("dashboard")
 
         cleaned_text = bleach.clean(final_text, tags=ALLOWED_TAGS, strip=True)
@@ -203,6 +239,10 @@ class DocumentCreateView(View):
         )
 
         messages.success(request, "Документ успешно создан")
+        if request.htmx:
+            response = HttpResponseClientRedirect("/dashboard/")
+            response["HX-Trigger"] = "rubricsUpdated"
+            return response
         return redirect("dashboard")
 
 

@@ -70,3 +70,54 @@ class RegisterForm(forms.ModelForm):
 class LoginForm(forms.Form):
     email = forms.EmailField(label="Email", widget=forms.EmailInput(attrs={"class": "form-control"}))
     password = forms.CharField(label="Пароль", widget=forms.PasswordInput(attrs={"class": "form-control"}))
+
+
+class PasswordResetRequestForm(forms.Form):
+    """Форма для запроса сброса пароля"""
+
+    email = forms.EmailField(label="Email", widget=forms.EmailInput(attrs={"class": "form-control"}))
+
+    def clean_email(self):
+        email = self.cleaned_data.get("email")
+        if not User.objects.filter(email=email).exists():
+            raise ValidationError("Пользователь с таким email не найден")
+        return email
+
+
+class PasswordResetConfirmForm(forms.Form):
+    """Форма для установки нового пароля"""
+
+    new_password1 = forms.CharField(
+        label="Новый пароль", widget=forms.PasswordInput(attrs={"class": "form-control"}), min_length=8
+    )
+    new_password2 = forms.CharField(
+        label="Подтверждение пароля", widget=forms.PasswordInput(attrs={"class": "form-control"})
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get("new_password1")
+        password2 = cleaned_data.get("new_password2")
+        if password1 and password2 and password1 != password2:
+            raise ValidationError("Пароли не совпадают")
+        return cleaned_data
+
+
+class ChangePasswordForm(forms.Form):
+    """Форма для смены пароля авторизованным пользователем"""
+
+    old_password = forms.CharField(label="Текущий пароль", widget=forms.PasswordInput(attrs={"class": "form-control"}))
+    new_password1 = forms.CharField(
+        label="Новый пароль", widget=forms.PasswordInput(attrs={"class": "form-control"}), min_length=8
+    )
+    new_password2 = forms.CharField(
+        label="Подтверждение пароля", widget=forms.PasswordInput(attrs={"class": "form-control"})
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        new_password1 = cleaned_data.get("new_password1")
+        new_password2 = cleaned_data.get("new_password2")
+        if new_password1 and new_password2 and new_password1 != new_password2:
+            raise ValidationError("Новые пароли не совпадают")
+        return cleaned_data

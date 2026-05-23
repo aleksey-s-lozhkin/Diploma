@@ -30,24 +30,6 @@
                     </div>
                 </div>
 
-                <!-- Фильтр по рубрикам -->
-                <div class="mb-3">
-                    <label class="form-label fw-bold">📂 Фильтр по рубрике:</label>
-                    <select name="rubric"
-                            class="form-select"
-                            hx-post="{% url 'search_results' %}"
-                            hx-trigger="change"
-                            hx-target="#search-results"
-                            hx-include="[name='query']">
-                        <option value="">Все рубрики</option>
-                        <option value="технологии">Технологии</option>
-                        <option value="бизнес">Бизнес</option>
-                        <option value="наука">Наука</option>
-                        <option value="спорт">Спорт</option>
-                        <option value="it">IT</option>
-                        <option value="python">Python</option>
-                    </select>
-                </div>
                 <!-- Фильтр по публичности -->
                 <div class="mb-3">
                     <label class="form-label fw-bold">🔒 Тип доступа:</label>
@@ -56,12 +38,13 @@
                             hx-post="{% url 'search_results' %}"
                             hx-trigger="change"
                             hx-target="#search-results"
-                            hx-include="[name='query'], [name='rubric']">
+                            hx-include="[name='query']">
                         <option value="all">Все документы</option>
                         <option value="public">🌍 Только публичные</option>
                         <option value="private">🔒 Только мои</option>
                     </select>
                 </div>
+
                 {% else %}
                 <div class="alert alert-warning text-center">
                     🔐 Для использования поиска
@@ -79,6 +62,7 @@
         </div>
     </div>
 </div>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const urlParams = new URLSearchParams(window.location.search);
