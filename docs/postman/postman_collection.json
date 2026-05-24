@@ -1,0 +1,227 @@
+{
+  "info": {
+    "name": "Document Search API",
+    "description": "API для полнотекстового поиска документов",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/auth/login/",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"yourpassword\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/auth/refresh/",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify Token",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/auth/verify/",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/auth/logout/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        },
+        {
+          "name": "Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/auth/profile/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/register/",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"password\": \"securepass123\",\n  \"confirm_password\": \"securepass123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/profile/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        },
+        {
+          "name": "Logout (api)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/logout/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "List Documents",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/documents/?page=1",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        },
+        {
+          "name": "Create Document",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/documents/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rubrics\": [\"Git\", \"Version Control\"],\n  \"text\": \"Git is a distributed version control system...\",\n  \"is_public\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Document",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/documents/1/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        },
+        {
+          "name": "Update Document",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/documents/1/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rubrics\": [\"Git\", \"SCM\"],\n  \"text\": \"Updated content...\",\n  \"is_public\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Partial Update Document",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/documents/1/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_public\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Document",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/documents/1/",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Search Documents",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/search/?q=git",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

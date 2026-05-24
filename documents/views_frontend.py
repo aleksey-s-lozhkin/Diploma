@@ -1,7 +1,6 @@
 import os
 import re
 
-import bleach
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -19,39 +18,11 @@ from elasticsearch_dsl import Search
 from elasticsearch_dsl.connections import connections
 
 from .models import Document, SearchHistory
-from .rate_limit import check_rate_limit
+from .rate_limit import RateLimiters
 from .utils import extract_text_from_file
 
-ALLOWED_TAGS = [
-    "p",
-    "br",
-    "b",
-    "i",
-    "u",
-    "strong",
-    "em",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "ul",
-    "ol",
-    "li",
-    "table",
-    "tr",
-    "td",
-    "th",
-    "thead",
-    "tbody",
-    "a",
-    "img",
-    "pre",
-    "code",
-    "blockquote",
-    "hr",
-    "div",
-    "span",
-]
+# Константы
+MAX_TEXT_LENGTH = 100000
 
 
 class LogoutView(View):
@@ -78,9 +49,12 @@ class IndexView(View):
 class SearchResultsView(View):
     def post(self, request):
         user_id = request.user.id
-        is_allowed, remaining, retry_after = check_rate_limit(f"search_{user_id}", 20, 60)
 
-        if not is_allowed:
+        # Rate limiting: 30 запросов в минуту
+        limiter = RateLimiters.api_search()
+        allowed, remaining, retry_after = limiter.check(f"user_{user_id}")
+
+        if not allowed:
             return render(
                 request,
                 "partials/search_results.html",
@@ -217,13 +191,25 @@ class DocumentCreateView(View):
         )
 
     def post(self, request):
+        # Rate limiting: 100 действий в минуту
+        limiter = RateLimiters.api_general()
+        allowed, remaining, retry_after = limiter.check(f"user_{request.user.id}_create")
+
+        if not allowed:
+            messages.error(request, f"Слишком много действий. Подождите {retry_after} секунд.")
+            return redirect("dashboard")
+
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
-        raw_text = request.POST.get("text", "")
+        raw_text = request.POST.get("text", "").strip()
         is_public = request.POST.get("is_public") == "on"
 
+        # Валидация длины текста
+        if len(raw_text) > MAX_TEXT_LENGTH:
+            messages.error(request, f"Текст слишком длинный (максимум {MAX_TEXT_LENGTH} символов)")
+            return render(request, "document_form.html", {"form": request.POST})
+
         text_source = "manual"
-        final_text = raw_text
         uploaded_file = request.FILES.get("file")
 
         if uploaded_file:
@@ -254,11 +240,11 @@ class DocumentCreateView(View):
                 return response
             return redirect("dashboard")
 
-        cleaned_text = bleach.clean(final_text, tags=ALLOWED_TAGS, strip=True)
+        # Сохраняем текст как есть (Django экранирует при выводе)
         Document.objects.create(
             user=request.user,
             rubrics=rubrics,
-            text=cleaned_text,
+            text=raw_text,
             is_public=is_public,
             file=None,
             file_name="",

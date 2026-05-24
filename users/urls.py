@@ -13,6 +13,7 @@ urlpatterns = [
     path("change-password/", views.ChangePasswordView.as_view(), name="change_password"),
     # API endpoints
     path("api/register/", api_views.APIRegisterView.as_view(), name="api_register"),
+    path("api/login/", api_views.APILoginView.as_view(), name="api_login"),
     path("api/logout/", api_views.APILogoutView.as_view(), name="api_logout"),
     path("api/profile/", api_views.APIUserProfileView.as_view(), name="api_profile"),
 ]
