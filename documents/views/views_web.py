@@ -17,11 +17,10 @@ from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefre
 from elasticsearch_dsl import Search
 from elasticsearch_dsl.connections import connections
 
-from .models import Document, SearchHistory
-from .rate_limit import RateLimiters
-from .utils import extract_text_from_file
+from documents.models import Document, SearchHistory
+from documents.rate_limit import RateLimiters
+from documents.utils import extract_text_from_file
 
-# Константы
 MAX_TEXT_LENGTH = 100000
 
 
@@ -50,7 +49,6 @@ class SearchResultsView(View):
     def post(self, request):
         user_id = request.user.id
 
-        # Rate limiting: 30 запросов в минуту
         limiter = RateLimiters.api_search()
         allowed, remaining, retry_after = limiter.check(f"user_{user_id}")
 
@@ -191,7 +189,6 @@ class DocumentCreateView(View):
         )
 
     def post(self, request):
-        # Rate limiting: 100 действий в минуту
         limiter = RateLimiters.api_general()
         allowed, remaining, retry_after = limiter.check(f"user_{request.user.id}_create")
 
@@ -204,7 +201,6 @@ class DocumentCreateView(View):
         raw_text = request.POST.get("text", "").strip()
         is_public = request.POST.get("is_public") == "on"
 
-        # Валидация длины текста
         if len(raw_text) > MAX_TEXT_LENGTH:
             messages.error(request, f"Текст слишком длинный (максимум {MAX_TEXT_LENGTH} символов)")
             return render(request, "document_form.html", {"form": request.POST})
@@ -240,7 +236,6 @@ class DocumentCreateView(View):
                 return response
             return redirect("dashboard")
 
-        # Сохраняем текст как есть (Django экранирует при выводе)
         Document.objects.create(
             user=request.user,
             rubrics=rubrics,
@@ -303,7 +298,7 @@ class ClearHistoryView(View):
 @method_decorator(login_required, name="dispatch")
 class DocumentDetailView(View):
     def get(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk, user=request.user)
+        doc = get_object_or_404(Document, Q(user=request.user) | Q(is_public=True), pk=pk)
         return render(request, "document_detail.html", {"doc": doc})
 
 

@@ -1,38 +1,9 @@
-import bleach
 from rest_framework import serializers
 
 from .models import Document, SearchHistory
 
-ALLOWED_TAGS = [
-    "p",
-    "br",
-    "b",
-    "i",
-    "u",
-    "strong",
-    "em",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "ul",
-    "ol",
-    "li",
-    "table",
-    "tr",
-    "td",
-    "th",
-    "thead",
-    "tbody",
-    "a",
-    "img",
-    "pre",
-    "code",
-    "blockquote",
-    "hr",
-    "div",
-    "span",
-]
+# Константа для максимальной длины текста
+MAX_TEXT_LENGTH = 100000
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -55,13 +26,35 @@ class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
         fields = ["rubrics", "text", "is_public"]
 
     def validate_text(self, value):
-        return bleach.clean(value, tags=ALLOWED_TAGS, strip=True)
+        """Валидация текста без bleach"""
+        if not value:
+            return value
+
+        # Проверка длины
+        if len(value) > MAX_TEXT_LENGTH:
+            raise serializers.ValidationError(f"Текст слишком длинный. Максимум {MAX_TEXT_LENGTH} символов.")
+
+        # Базовая очистка: удаляем control characters
+        import re
+
+        # Удаляем нулевые символы и control characters (кроме \n, \r, \t)
+        value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)
+
+        return value
 
     def validate_rubrics(self, value):
         if not isinstance(value, list):
             raise serializers.ValidationError("Рубрики должны быть списком")
         if len(value) > 10:
             raise serializers.ValidationError("Не более 10 рубрик")
+
+        # Дополнительная валидация каждой рубрики
+        for rubric in value:
+            if not isinstance(rubric, str):
+                raise serializers.ValidationError("Рубрики должны быть строками")
+            if len(rubric) > 100:
+                raise serializers.ValidationError("Рубрика не длиннее 100 символов")
+
         return value
 
 

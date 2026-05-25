@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import HttpResponse
+from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.urls import include, path
 from drf_yasg import openapi
@@ -10,7 +10,7 @@ from rest_framework import permissions
 
 
 def health_check(request):
-    return HttpResponse("OK")
+    return JsonResponse({"status": "ok"})
 
 
 schema_view = get_schema_view(
@@ -18,7 +18,6 @@ schema_view = get_schema_view(
         title="Document Search API",
         default_version="v1",
         description="API для полнотекстового поиска документов",
-        terms_of_service="https://www.google.com/policies/terms/",
         contact=openapi.Contact(email="aleksey.s.lozhkin@gmail.com"),
         license=openapi.License(name="MIT License"),
     ),
@@ -26,24 +25,23 @@ schema_view = get_schema_view(
     permission_classes=[permissions.AllowAny],
 )
 
-
 urlpatterns = [
-    # Документация API
+    # Swagger документация
     path("swagger/", schema_view.with_ui("swagger", cache_timeout=0), name="schema-swagger-ui"),
     path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
     path("swagger.json", schema_view.without_ui(cache_timeout=0), name="schema-json"),
-    # Администрирование и мониторинг
+    # Администрирование
     path("admin/", admin.site.urls),
     path("health/", health_check, name="health_check"),
-    # API эндпоинты
-    path("api/", include("documents.urls")),
-    path("api/", include("users.urls")),
-    # Frontend (HTMX)
-    path("", include("documents.urls_frontend")),
+    # API (REST)
+    path("api/", include("documents.urls.urls_api")),
+    path("api/", include("users.urls.urls_api")),
+    # Frontend (HTML/HTMX)
+    path("", include("documents.urls.urls_web")),
+    path("", include("users.urls.urls_web")),
     # Перенаправления
     path("accounts/login/", lambda request: redirect("/login/")),
 ]
-
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

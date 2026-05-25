@@ -10,10 +10,9 @@ from django.views import View
 from django_htmx.http import HttpResponseClientRedirect
 
 from documents.rate_limit import RateLimiters
-
-from .email_utils import send_password_reset_email, send_verification_email
-from .forms import ChangePasswordForm, LoginForm, PasswordResetConfirmForm, PasswordResetRequestForm, RegisterForm
-from .models import User
+from users.email_utils import send_password_reset_email, send_verification_email
+from users.forms import ChangePasswordForm, LoginForm, PasswordResetConfirmForm, PasswordResetRequestForm, RegisterForm
+from users.models import User
 
 logger = logging.getLogger(__name__)
 
