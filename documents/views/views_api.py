@@ -1,19 +1,19 @@
-from django.http import JsonResponse
+import os
+
+from django.conf import settings
+from django.db import models
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
-from elasticsearch_dsl import Search
-from elasticsearch_dsl.connections import connections
 from rest_framework import permissions, status, viewsets
+from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Document
-from ..rate_limit import RateLimiters
-from ..serializers import DocumentCreateUpdateSerializer, DocumentSerializer
-
-
-def health_check(request):
-    return JsonResponse({"status": "ok"})
+from documents.models import Document, SearchHistory
+from documents.rate_limit import RateLimiters
+from documents.serializers import DocumentCreateUpdateSerializer, DocumentSerializer
+from documents.services.search_service import SearchService
+from documents.utils import extract_text_from_file
 
 
 class SearchView(APIView):
@@ -21,22 +21,29 @@ class SearchView(APIView):
 
     @swagger_auto_schema(
         tags=["search"],
-        operation_description="Полнотекстовый поиск по документам",
+        operation_description="Полнотекстовый поиск по документам с фильтрацией",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["query"],
             properties={
                 "query": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Поисковый запрос", example="разработка python"
+                    type=openapi.TYPE_STRING, description="Поисковый запрос", example="python разработка"
                 ),
-                "page": openapi.Schema(
-                    type=openapi.TYPE_INTEGER, description="Номер страницы (по умолчанию 1)", default=1, example=2
+                "rubric": openapi.Schema(
+                    type=openapi.TYPE_STRING, description="Фильтр по рубрике", example="технологии"
                 ),
+                "privacy": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=["all", "public", "private"],
+                    description="Тип доступа",
+                    default="all",
+                ),
+                "page": openapi.Schema(type=openapi.TYPE_INTEGER, description="Номер страницы", default=1),
             },
         ),
         responses={
             200: "Успешный поиск",
-            400: 'Query parameter "query" required',
+            400: "Query parameter 'query' required",
             401: "Не авторизован",
             429: "Too many requests (30 per minute)",
         },
@@ -44,7 +51,7 @@ class SearchView(APIView):
     def post(self, request):
         user_id = request.user.id
 
-        # ← Используем новый классовый RateLimiter
+        # Rate limiting
         limiter = RateLimiters.api_search()
         allowed, remaining, retry_after = limiter.check(f"user_{user_id}")
 
@@ -52,57 +59,51 @@ class SearchView(APIView):
             return Response(
                 {"error": f"Too many requests. Please wait {retry_after} seconds."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={"X-RateLimit-Retry-After": str(retry_after)},
             )
 
-        query = request.data.get("query", "")
+        # Получаем параметры запроса
+        query = request.data.get("query", "").strip()
+        rubric = request.data.get("rubric", "")
+        privacy = request.data.get("privacy", "all")
+        page = int(request.data.get("page", 1))
+
         if not query:
-            return Response({"error": "Query parameter 'query' required"}, status=400)
+            return Response({"error": "Query parameter 'query' required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        connections.configure(default={"hosts": "http://elasticsearch:9200"})
-
-        s = Search(index="documents").query(
-            "bool",
-            must=[{"match": {"text": query}}],
-            should=[{"term": {"user_id": request.user.id}}, {"term": {"is_public": True}}],
-            minimum_should_match=1,
+        # Используем сервис поиска
+        service = SearchService(request.user)
+        search_response = service.search(
+            query=query,
+            rubric=rubric,
+            privacy=privacy,
+            page=page,
+            save_history=True,
+            with_highlights=False,
+            truncate_text=True,
+            max_text_length=500,
         )
 
-        page = int(request.data.get("page", 1))
-        page_size = 20
-        start = (page - 1) * page_size
-        s = s[start : start + page_size]
-
-        response = s.execute()
-
-        results = []
-        for hit in response:
-            rubrics = list(hit.rubrics) if hit.rubrics else []
-
-            results.append(
-                {
-                    "id": hit.id,
-                    "rubrics": rubrics,
-                    "text": hit.text[:500] + "..." if len(hit.text) > 500 else hit.text,
-                }
-            )
-
-        total = response.hits.total.value
-        total_pages = (total + page_size - 1) // page_size
+        total_pages = search_response.total_pages
 
         return Response(
             {
-                "count": total,
+                "count": search_response.total,
                 "next": page + 1 if page < total_pages else None,
                 "previous": page - 1 if page > 1 else None,
-                "results": results,
-                "rate_limit": {"remaining": remaining},
-            }
+                "results": [r.to_dict() for r in search_response.results],
+            },
+            headers={
+                "X-RateLimit-Limit": str(limiter.limit),
+                "X-RateLimit-Remaining": str(remaining),
+            },
         )
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser]
 
     @swagger_auto_schema(
         tags=["documents"],
@@ -114,12 +115,102 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         tags=["documents"],
-        operation_description="Создать новый документ",
-        request_body=DocumentCreateUpdateSerializer,
+        operation_description="Создать новый документ (текст или файл)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "rubrics": openapi.Schema(
+                    type=openapi.TYPE_STRING, description="Рубрики через запятую", example="технологии, python, django"
+                ),
+                "text": openapi.Schema(type=openapi.TYPE_STRING, description="Текст документа (если без файла)"),
+                "is_public": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Публичный доступ", default=False),
+                "file": openapi.Schema(type=openapi.TYPE_FILE, description="Файл (PDF, DOCX, XLSX, TXT)"),
+            },
+        ),
         responses={201: DocumentSerializer()},
     )
     def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+        # Rate limiting
+        limiter = RateLimiters.api_general()
+        allowed, remaining, retry_after = limiter.check(f"user_{request.user.id}_create")
+
+        if not allowed:
+            from rest_framework.exceptions import Throttled
+
+            raise Throttled(wait=retry_after)
+
+        # Обработка рубрик
+        rubrics_data = request.data.get("rubrics", [])
+        if isinstance(rubrics_data, str):
+            rubrics = [r.strip() for r in rubrics_data.split(",") if r.strip()]
+        else:
+            rubrics = rubrics_data
+
+        # Обработка is_public
+        is_public = request.data.get("is_public", False)
+        if isinstance(is_public, str):
+            is_public = is_public.lower() == "true"
+
+        # Проверяем, есть ли загруженный файл
+        uploaded_file = request.FILES.get("file")
+
+        if uploaded_file:
+            file_name = uploaded_file.name
+            file_type = file_name.split(".")[-1].lower()
+
+            # Валидация типа файла
+            allowed_types = ["pdf", "docx", "xlsx", "txt"]
+            if file_type not in allowed_types:
+                return Response(
+                    {"error": f"Неподдерживаемый тип файла. Разрешены: {', '.join(allowed_types)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Валидация количества рубрик
+            if len(rubrics) > 10:
+                return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Создаём документ
+            document = Document.objects.create(
+                user=request.user,
+                rubrics=rubrics,
+                text="",
+                is_public=is_public,
+                file=uploaded_file,
+                file_name=file_name,
+                file_type=file_type,
+                text_source="file",
+            )
+
+            # Извлекаем текст из файла
+            file_path = os.path.join(settings.MEDIA_ROOT, document.file.name)
+            extracted_text = extract_text_from_file(file_path, file_type)
+            document.text = extracted_text
+            document.save()
+
+            serializer = self.get_serializer(document)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        else:
+            text = request.data.get("text", "")
+            if not text:
+                return Response(
+                    {"error": "Укажите либо 'text', либо загрузите 'file'"}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Валидация количества рубрик
+            if len(rubrics) > 10:
+                return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Передаём обработанные данные в сериализатор
+            modified_data = request.data.copy()
+            modified_data["rubrics"] = rubrics
+            modified_data["is_public"] = is_public
+
+            serializer = self.get_serializer(data=modified_data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @swagger_auto_schema(
         tags=["documents"], operation_description="Получить документ по ID", responses={200: DocumentSerializer()}
@@ -169,13 +260,42 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return DocumentSerializer
 
     def perform_create(self, serializer):
-        # Добавим rate limiting на создание документов
-        limiter = RateLimiters.api_general()
-        allowed, remaining, retry_after = limiter.check(f"user_{self.request.user.id}_create")
-
-        if not allowed:
-            from rest_framework.exceptions import Throttled
-
-            raise Throttled(wait=retry_after)
-
         serializer.save(user=self.request.user)
+
+
+class RubricsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        tags=["search"],
+        operation_description="Получить список всех рубрик из доступных пользователю документов",
+        responses={200: openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING))},
+    )
+    def get(self, request):
+        documents = Document.objects.filter(models.Q(user=request.user) | models.Q(is_public=True)).values_list(
+            "rubrics", flat=True
+        )
+
+        unique_rubrics = set()
+        for rubrics_list in documents:
+            for rubric in rubrics_list:
+                unique_rubrics.add(rubric)
+
+        return Response(sorted(unique_rubrics))
+
+
+class SearchHistoryDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        tags=["search"],
+        operation_description="Удалить запись из истории поиска",
+        responses={204: "Удалено", 404: "Не найдено"},
+    )
+    def delete(self, request, pk):
+        try:
+            history = SearchHistory.objects.get(pk=pk, user=request.user)
+            history.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except SearchHistory.DoesNotExist:
+            return Response({"error": "History entry not found"}, status=status.HTTP_404_NOT_FOUND)

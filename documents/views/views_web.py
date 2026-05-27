@@ -1,5 +1,4 @@
 import os
-import re
 
 from django.conf import settings
 from django.contrib import messages
@@ -14,11 +13,10 @@ from django.views import View
 from django.views.decorators.cache import cache_page, never_cache
 from django.views.decorators.vary import vary_on_cookie
 from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
-from elasticsearch_dsl import Search
-from elasticsearch_dsl.connections import connections
 
 from documents.models import Document, SearchHistory
 from documents.rate_limit import RateLimiters
+from documents.services.search_service import SearchService
 from documents.utils import extract_text_from_file
 
 MAX_TEXT_LENGTH = 100000
@@ -64,76 +62,35 @@ class SearchResultsView(View):
             )
 
         try:
-            query = request.POST.get("query", "")
+            query = request.POST.get("query", "").strip()
             rubric = request.POST.get("rubric", "")
             privacy = request.POST.get("privacy", "all")
             page = int(request.POST.get("page", 1))
-            page_size = 20
 
             if not query:
                 return render(request, "partials/search_results.html", {"results": [], "query": ""})
 
-            connections.configure(default={"hosts": "http://elasticsearch:9200"})
-
-            s = Search(index="documents").query(
-                "bool",
-                must=[{"match": {"text": query}}],
+            # Используем сервис поиска
+            service = SearchService(request.user)
+            search_response = service.search(
+                query=query,
+                rubric=rubric,
+                privacy=privacy,
+                page=page,
+                save_history=True,
+                with_highlights=True,
+                with_truncation=False,
             )
-
-            s = s.query(
-                "bool",
-                should=[{"term": {"user_id": request.user.id}}, {"term": {"is_public": True}}],
-                minimum_should_match=1,
-            )
-
-            if rubric and rubric != "":
-                s = s.query("match", rubrics=rubric)
-
-            if privacy == "public":
-                s = s.query("term", is_public=True)
-            elif privacy == "private":
-                s = s.query("term", user_id=request.user.id)
-
-            start = (page - 1) * page_size
-            s = s[start : start + page_size]
-
-            response = s.execute()
-
-            if page == 1:
-                SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
-
-            results = []
-            for hit in response:
-                highlights = []
-                if hasattr(hit.meta, "highlight") and "text" in hit.meta.highlight:
-                    for fragment in hit.meta.highlight.text:
-                        cleaned = re.sub(r"\s+", " ", fragment).strip()
-                        if cleaned:
-                            highlights.append(cleaned)
-
-                results.append(
-                    {
-                        "id": hit.id,
-                        "rubrics": hit.rubrics,
-                        "text": hit.text,
-                        "created_date": hit.created_date,
-                        "highlights": highlights,
-                        "is_public": hit.is_public,
-                    }
-                )
-
-            total = response.hits.total.value
-            total_pages = (total + page_size - 1) // page_size
 
             return render(
                 request,
                 "partials/search_results.html",
                 {
-                    "results": results,
+                    "results": [r.to_dict() for r in search_response.results],
                     "query": query,
                     "page": page,
-                    "total_pages": total_pages,
-                    "total": total,
+                    "total_pages": search_response.total_pages,
+                    "total": search_response.total,
                     "rubric": rubric,
                     "privacy": privacy,
                 },
@@ -198,6 +155,38 @@ class DocumentCreateView(View):
 
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
+
+        # Проверка количества рубрик
+        if len(rubrics) > 10:
+            messages.error(request, "Не более 10 рубрик")
+            return render(
+                request,
+                "document_form.html",
+                {
+                    "is_edit": False,
+                    "rubrics_value": rubrics_str,
+                    "text_value": request.POST.get("text", ""),
+                    "text_source": request.POST.get("text_source", "manual"),
+                    "is_file_uploaded": bool(request.FILES.get("file")),
+                },
+            )
+
+        # Проверка длины каждой рубрики
+        for rubric in rubrics:
+            if len(rubric) > 100:
+                messages.error(request, f"Рубрика '{rubric[:50]}...' слишком длинная. Максимум 100 символов.")
+                return render(
+                    request,
+                    "document_form.html",
+                    {
+                        "is_edit": False,
+                        "rubrics_value": rubrics_str,
+                        "text_value": request.POST.get("text", ""),
+                        "text_source": request.POST.get("text_source", "manual"),
+                        "is_file_uploaded": bool(request.FILES.get("file")),
+                    },
+                )
+
         raw_text = request.POST.get("text", "").strip()
         is_public = request.POST.get("is_public") == "on"
 

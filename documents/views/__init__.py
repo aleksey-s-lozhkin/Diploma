@@ -1,4 +1,4 @@
-from .views_api import DocumentViewSet, SearchView, health_check
+from .views_api import DocumentViewSet, SearchView
 from .views_web import (
     ClearHistoryView,
     DashboardView,
@@ -18,7 +18,6 @@ __all__ = [
     # API views
     "DocumentViewSet",
     "SearchView",
-    "health_check",
     # Web views
     "IndexView",
     "DashboardView",
