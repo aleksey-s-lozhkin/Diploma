@@ -80,8 +80,7 @@ class SearchView(APIView):
             page=page,
             save_history=True,
             with_highlights=False,
-            truncate_text=True,
-            max_text_length=500,
+            with_truncation=True,
         )
 
         total_pages = search_response.total_pages
@@ -151,14 +150,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if isinstance(is_public, str):
             is_public = is_public.lower() == "true"
 
-        # Проверяем, есть ли загруженный файл
         uploaded_file = request.FILES.get("file")
 
         if uploaded_file:
             file_name = uploaded_file.name
             file_type = file_name.split(".")[-1].lower()
 
-            # Валидация типа файла
             allowed_types = ["pdf", "docx", "xlsx", "txt"]
             if file_type not in allowed_types:
                 return Response(
@@ -166,11 +163,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Валидация количества рубрик
             if len(rubrics) > 10:
                 return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Создаём документ
             document = Document.objects.create(
                 user=request.user,
                 rubrics=rubrics,
@@ -182,14 +177,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 text_source="file",
             )
 
-            # Извлекаем текст из файла
             file_path = os.path.join(settings.MEDIA_ROOT, document.file.name)
             extracted_text = extract_text_from_file(file_path, file_type)
             document.text = extracted_text
             document.save()
 
-            serializer = self.get_serializer(document)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            output_serializer = DocumentSerializer(document)
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
         else:
             text = request.data.get("text", "")
@@ -198,19 +192,21 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     {"error": "Укажите либо 'text', либо загрузите 'file'"}, status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Валидация количества рубрик
             if len(rubrics) > 10:
                 return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Передаём обработанные данные в сериализатор
-            modified_data = request.data.copy()
-            modified_data["rubrics"] = rubrics
-            modified_data["is_public"] = is_public
+            create_serializer = DocumentCreateUpdateSerializer(data=request.data)
+            create_serializer.is_valid(raise_exception=True)
 
-            serializer = self.get_serializer(data=modified_data)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            document = Document.objects.create(
+                user=request.user,
+                rubrics=create_serializer.validated_data.get("rubrics", []),
+                text=create_serializer.validated_data["text"],
+                is_public=create_serializer.validated_data.get("is_public", False),
+            )
+
+            output_serializer = DocumentSerializer(document)
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
     @swagger_auto_schema(
         tags=["documents"], operation_description="Получить документ по ID", responses={200: DocumentSerializer()}

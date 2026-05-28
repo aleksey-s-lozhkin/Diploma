@@ -42,6 +42,24 @@ djangorestframework-stubs = "^3.17.0"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.flake8]
+max-line-length = 120
+ignore = ["E203", "W503"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "docs",
+    "build",
+    "dist",
+    "venv",
+    ".venv",
+    "*/migrations/*",
+    "*/tests.py",
+    "manage.py",
+    "env",
+    "tests/",
+]
+
 [tool.black]
 line-length = 120
 target-version = ['py312']

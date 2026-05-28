@@ -118,7 +118,7 @@ class APILoginView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         email = request.data.get("email")
 
-        # Rate limiting по email для логина
+        # Rate limiting
         limiter = RateLimiters.login()
         allowed, remaining, retry_after = limiter.check(email)
 
@@ -144,7 +144,13 @@ class APILoginView(TokenObtainPairView):
         except exceptions.AuthenticationFailed as e:
             return Response({"error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
 
-        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "refresh": str(serializer.validated_data.get("refresh")),
+                "access": str(serializer.validated_data.get("access")),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
