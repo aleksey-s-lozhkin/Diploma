@@ -179,6 +179,86 @@ class UsersViewsAPITestCase(APITestCase):
         self.assertEqual(response.data["last_name"], "User")
         self.assertEqual(response.data["full_name"], "Test User")
 
+    def test_token_refresh_success(self):
+        """Успешное обновление access токена"""
+        # Сначала создаём пользователя и логинимся
+        user = User.objects.create_user(email="test@example.com", password="testpass123")
+        user.is_email_verified = True
+        user.is_active = True
+        user.save()
+
+        login_data = {"email": "test@example.com", "password": "testpass123"}
+        login_response = self.client.post(self.login_url, login_data, format="json")
+
+        refresh_token = login_response.data["refresh"]
+        old_access_token = login_response.data["access"]
+
+        # Обновляем токен
+        refresh_url = reverse("api_token_refresh")
+        response = self.client.post(refresh_url, {"refresh": refresh_token}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+
+        new_access_token = response.data["access"]
+        self.assertNotEqual(old_access_token, new_access_token)
+
+        # Проверяем, что новый токен работает
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {new_access_token}")
+        profile_response = self.client.get(self.profile_url)
+        self.assertEqual(profile_response.status_code, status.HTTP_200_OK)
+
+    def test_token_refresh_missing_refresh_token(self):
+        """Обновление токена без refresh токена"""
+        refresh_url = reverse("api_token_refresh")
+        response = self.client.post(refresh_url, {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
+        self.assertIn("Refresh token required", response.data["error"])
+
+    def test_token_refresh_invalid_token(self):
+        """Обновление токена с неверным refresh токеном"""
+        refresh_url = reverse("api_token_refresh")
+        response = self.client.post(refresh_url, {"refresh": "invalid.token.here"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn("error", response.data)
+        self.assertIn("Invalid or expired", response.data["error"])
+
+    def test_token_verify_success(self):
+        """Успешная проверка валидного access токена"""
+        user = User.objects.create_user(email="test@example.com", password="testpass123")
+        user.is_email_verified = True
+        user.is_active = True
+        user.save()
+
+        access_token = AccessToken.for_user(user)
+
+        verify_url = reverse("api_token_verify")
+        response = self.client.post(verify_url, {"token": str(access_token)}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["valid"])
+
+    def test_token_verify_missing_token(self):
+        """Проверка токена без указания токена"""
+        verify_url = reverse("api_token_verify")
+        response = self.client.post(verify_url, {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
+        self.assertIn("Token required", response.data["error"])
+
+    def test_token_verify_invalid_token(self):
+        """Проверка неверного токена"""
+        verify_url = reverse("api_token_verify")
+        response = self.client.post(verify_url, {"token": "invalid.token.here"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertFalse(response.data["valid"])
+        self.assertIn("error", response.data)
+
 
 class DocumentsCRUDViewsAPITestCase(APITestCase):
     """Тесты documents/views_api.py (CRUD документов + рубрики)"""

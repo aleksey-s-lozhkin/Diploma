@@ -1,3 +1,4 @@
+import logging
 import os
 
 from django.conf import settings
@@ -13,11 +14,14 @@ from django.views import View
 from django.views.decorators.cache import cache_page, never_cache
 from django.views.decorators.vary import vary_on_cookie
 from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
+from elasticsearch.exceptions import ConnectionError, NotFoundError
 
 from documents.models import Document, SearchHistory
 from documents.rate_limit import RateLimiters
 from documents.services.search_service import SearchService
 from documents.utils import extract_text_from_file
+
+logger = logging.getLogger(__name__)
 
 MAX_TEXT_LENGTH = 100000
 
@@ -57,7 +61,7 @@ class SearchResultsView(View):
                 {
                     "results": [],
                     "query": request.POST.get("query", ""),
-                    "error": f"⏱️ Слишком много запросов. Подождите {retry_after} секунд.",
+                    "error": f"Слишком много запросов. Подождите {retry_after} секунд.",
                 },
             )
 
@@ -95,8 +99,41 @@ class SearchResultsView(View):
                     "privacy": privacy,
                 },
             )
+        except ConnectionError as e:
+            logger.warning(f"Elasticsearch connection failed for user {user_id}: {e}")
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": [],
+                    "query": request.POST.get("query", ""),
+                    "error": "🔍 Поиск временно недоступен. Пожалуйста, попробуйте позже.",
+                },
+            )
+
+        except NotFoundError as e:
+            logger.error(f"Elasticsearch index 'documents' not found: {e}")
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": [],
+                    "query": request.POST.get("query", ""),
+                    "error": "⚙️ Ошибка конфигурации поиска. Администратор уже уведомлён.",
+                },
+            )
+
         except Exception as e:
-            return render(request, "partials/search_results.html", {"results": [], "query": query, "error": str(e)})
+            logger.exception(f"Unexpected search error for user {user_id}: {e}")
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": [],
+                    "query": request.POST.get("query", ""),
+                    "error": "❌ Произошла внутренняя ошибка. Мы уже работаем над этим.",
+                },
+            )
 
 
 @method_decorator(never_cache, name="dispatch")

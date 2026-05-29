@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
-    "drf_yasg",
+    "drf_spectacular",
     "django_elasticsearch_dsl",
     "django_htmx",
     # Local
@@ -142,7 +142,15 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "PAGE_SIZE": 10,
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "DocSearch API",
+    "DESCRIPTION": "API для поиска по документам с аутентификацией",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 # JWT Settings
@@ -202,18 +210,15 @@ RATELIMIT_ENABLE = True
 
 # Email settings
 # Для отладки (письма в консоль)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"  # Для продакшена закомментировать
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend' # Для продакшена раскомментировать
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.yandex.ru")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 465))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "False") == "True"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "True") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
-# Для продакшена (раскомментировать и закомментировать console)
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.yandex.ru')
-# EMAIL_PORT = int(os.getenv('EMAIL_PORT', 465))
-# EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False') == 'True'
-# EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'True') == 'True'
-# EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-# EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-# DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
-
-DEFAULT_FROM_EMAIL = "noreply@docsearch.com"
 VERIFICATION_EMAIL_TITLE = "Подтверждение email"
 VERIFICATION_TOKEN_EXPIRATION_DAYS = 1

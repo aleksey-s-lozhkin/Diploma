@@ -1,8 +1,11 @@
+import logging
 import re
 
 import pypdf
 from docx import Document as DocxDocument
 from openpyxl import load_workbook
+
+logger = logging.getLogger(__name__)
 
 
 def extract_text_from_file(file_path, file_type):
@@ -42,7 +45,7 @@ def extract_text_from_file(file_path, file_type):
                 text = f.read()
 
     except Exception as e:
-        print(f"Error extracting text from {file_path}: {e}")
+        logger.error(f"Error extracting text from {file_path}: {e}", exc_info=True)
         return ""
 
     return text

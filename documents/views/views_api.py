@@ -1,9 +1,9 @@
+import logging
 import os
 
 from django.conf import settings
 from django.db import models
-from drf_yasg import openapi
-from drf_yasg.utils import swagger_auto_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -15,37 +15,37 @@ from documents.serializers import DocumentCreateUpdateSerializer, DocumentSerial
 from documents.services.search_service import SearchService
 from documents.utils import extract_text_from_file
 
+logger = logging.getLogger(__name__)
+
 
 class SearchView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(
+    @extend_schema(
         tags=["search"],
-        operation_description="Полнотекстовый поиск по документам с фильтрацией",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=["query"],
-            properties={
-                "query": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Поисковый запрос", example="python разработка"
-                ),
-                "rubric": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Фильтр по рубрике", example="технологии"
-                ),
-                "privacy": openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    enum=["all", "public", "private"],
-                    description="Тип доступа",
-                    default="all",
-                ),
-                "page": openapi.Schema(type=openapi.TYPE_INTEGER, description="Номер страницы", default=1),
-            },
-        ),
+        description="Полнотекстовый поиск по документам с фильтрацией",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Поисковый запрос", "example": "python разработка"},
+                    "rubric": {"type": "string", "description": "Фильтр по рубрике", "example": "технологии"},
+                    "privacy": {
+                        "type": "string",
+                        "enum": ["all", "public", "private"],
+                        "description": "Тип доступа",
+                        "default": "all",
+                    },
+                    "page": {"type": "integer", "description": "Номер страницы", "default": 1},
+                },
+                "required": ["query"],
+            }
+        },
         responses={
-            200: "Успешный поиск",
-            400: "Query parameter 'query' required",
-            401: "Не авторизован",
-            429: "Too many requests (30 per minute)",
+            200: OpenApiResponse(description="Успешный поиск"),
+            400: OpenApiResponse(description="Query parameter 'query' required"),
+            401: OpenApiResponse(description="Не авторизован"),
+            429: OpenApiResponse(description="Too many requests (30 per minute)"),
         },
     )
     def post(self, request):
@@ -56,6 +56,7 @@ class SearchView(APIView):
         allowed, remaining, retry_after = limiter.check(f"user_{user_id}")
 
         if not allowed:
+            logger.warning(f"Rate limit exceeded for search: user {user_id}")
             return Response(
                 {"error": f"Too many requests. Please wait {retry_after} seconds."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -104,28 +105,32 @@ class DocumentViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [JSONParser, MultiPartParser]
 
-    @swagger_auto_schema(
+    @extend_schema(
         tags=["documents"],
-        operation_description="Получить список всех документов пользователя",
+        description="Получить список всех документов пользователя",
         responses={200: DocumentSerializer(many=True)},
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @swagger_auto_schema(
+    @extend_schema(
         tags=["documents"],
-        operation_description="Создать новый документ (текст или файл)",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "rubrics": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Рубрики через запятую", example="технологии, python, django"
-                ),
-                "text": openapi.Schema(type=openapi.TYPE_STRING, description="Текст документа (если без файла)"),
-                "is_public": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Публичный доступ", default=False),
-                "file": openapi.Schema(type=openapi.TYPE_FILE, description="Файл (PDF, DOCX, XLSX, TXT)"),
-            },
-        ),
+        description="Создать новый документ (текст или файл)",
+        request={
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "rubrics": {
+                        "type": "string",
+                        "description": "Рубрики через запятую",
+                        "example": "технологии, python, django",
+                    },
+                    "text": {"type": "string", "description": "Текст документа (если без файла)"},
+                    "is_public": {"type": "boolean", "description": "Публичный доступ", "default": False},
+                    "file": {"type": "string", "format": "binary", "description": "Файл (PDF, DOCX, XLSX, TXT)"},
+                },
+            }
+        },
         responses={201: DocumentSerializer()},
     )
     def create(self, request, *args, **kwargs):
@@ -134,6 +139,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         allowed, remaining, retry_after = limiter.check(f"user_{request.user.id}_create")
 
         if not allowed:
+            logger.warning(f"Rate limit exceeded for document create: user {request.user.id}")
             from rest_framework.exceptions import Throttled
 
             raise Throttled(wait=retry_after)
@@ -158,6 +164,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
             allowed_types = ["pdf", "docx", "xlsx", "txt"]
             if file_type not in allowed_types:
+                logger.warning(f"Unsupported file type {file_type} uploaded by user {request.user.id}")
                 return Response(
                     {"error": f"Неподдерживаемый тип файла. Разрешены: {', '.join(allowed_types)}"},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -208,16 +215,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
             output_serializer = DocumentSerializer(document)
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(
-        tags=["documents"], operation_description="Получить документ по ID", responses={200: DocumentSerializer()}
+    @extend_schema(
+        tags=["documents"],
+        description="Получить документ по ID",
+        responses={200: DocumentSerializer()},
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
-    @swagger_auto_schema(
+    @extend_schema(
         tags=["documents"],
-        operation_description="Обновить документ полностью",
-        request_body=DocumentCreateUpdateSerializer,
+        description="Обновить документ полностью",
+        request=DocumentCreateUpdateSerializer,
         responses={200: DocumentSerializer()},
     )
     def update(self, request, *args, **kwargs):
@@ -232,17 +241,19 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         return super().update(request, *args, **kwargs)
 
-    @swagger_auto_schema(
+    @extend_schema(
         tags=["documents"],
-        operation_description="Частично обновить документ",
-        request_body=DocumentCreateUpdateSerializer,
+        description="Частично обновить документ",
+        request=DocumentCreateUpdateSerializer,
         responses={200: DocumentSerializer()},
     )
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
-    @swagger_auto_schema(
-        tags=["documents"], operation_description="Удалить документ", responses={204: "Документ удалён"}
+    @extend_schema(
+        tags=["documents"],
+        description="Удалить документ",
+        responses={204: OpenApiResponse(description="Документ удалён")},
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
@@ -262,10 +273,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
 class RubricsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(
+    @extend_schema(
         tags=["search"],
-        operation_description="Получить список всех рубрик из доступных пользователю документов",
-        responses={200: openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(type=openapi.TYPE_STRING))},
+        description="Получить список всех рубрик из доступных пользователю документов",
+        responses={
+            200: OpenApiResponse(description="Список рубрик", response={"type": "array", "items": {"type": "string"}})
+        },
     )
     def get(self, request):
         documents = Document.objects.filter(models.Q(user=request.user) | models.Q(is_public=True)).values_list(
@@ -283,10 +296,14 @@ class RubricsView(APIView):
 class SearchHistoryDeleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(
+    @extend_schema(
         tags=["search"],
-        operation_description="Удалить запись из истории поиска",
-        responses={204: "Удалено", 404: "Не найдено"},
+        description="Удалить запись из истории поиска",
+        parameters=[OpenApiParameter(name="pk", type=int, location="path", description="ID записи истории")],
+        responses={
+            204: OpenApiResponse(description="Удалено"),
+            404: OpenApiResponse(description="Не найдено"),
+        },
     )
     def delete(self, request, pk):
         try:
