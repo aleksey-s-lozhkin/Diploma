@@ -1,14 +1,73 @@
-{% if error %}
-    <div class="alert alert-warning">{{ error }}</div>
-{% elif results %}
-    <div class="mb-3">
-        <small class="text-muted">Найдено: {{ total }} документов</small>
+{% if reset %}
+    <div class="alert alert-info">
+        🧹 Фильтры сброшены. Введите новый запрос для поиска.
+    </div>
+    <script>
+        // Дополнительно очищаем поля на всякий случай
+        if (document.getElementById('search-query')) {
+            document.getElementById('search-query').value = '';
+            document.getElementById('rubric-select').value = '';
+            document.getElementById('privacy-select').value = 'all';
+        }
+    </script>
+
+{% elif empty_query %}
+    <div class="alert alert-info text-center">
+        <strong>💡 Введите поисковый запрос</strong><br>
+        <small>Например: отчет, приказ, договор, CI, git</small>
     </div>
 
+{% elif error %}
+    <div class="alert alert-danger">
+        ⚠️ {{ error }}
+        <button class="btn btn-sm btn-outline-danger ms-3"
+                hx-post="{% url 'search_results' %}"
+                hx-vals='{"reset": "true"}'
+                hx-target="#search-results"
+                hx-indicator="#spinner">
+            🔄 Сбросить
+        </button>
+    </div>
+
+{% elif results %}
+    <!-- Количество результатов + сортировка -->
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <small class="text-muted">
+            📊 Найдено: <strong>{{ total }}</strong> документов
+            {% if query %} по запросу <strong>"{{ query }}"</strong>{% endif %}
+        </small>
+
+        <!-- Сортировка -->
+        <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-secondary {% if sort == 'relevance' %}active{% endif %}"
+                    hx-post="{% url 'search_results' %}"
+                    hx-vals='{"sort": "relevance", "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}", "page": 1}'
+                    hx-target="#search-results"
+                    hx-indicator="#spinner">
+                ⭐ Релевантность
+            </button>
+            <button class="btn btn-outline-secondary {% if sort == 'date' %}active{% endif %}"
+                    hx-post="{% url 'search_results' %}"
+                    hx-vals='{"sort": "date", "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}", "page": 1}'
+                    hx-target="#search-results"
+                    hx-indicator="#spinner">
+                📅 Новые
+            </button>
+            <button class="btn btn-outline-secondary {% if sort == 'date_asc' %}active{% endif %}"
+                    hx-post="{% url 'search_results' %}"
+                    hx-vals='{"sort": "date_asc", "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}", "page": 1}'
+                    hx-target="#search-results"
+                    hx-indicator="#spinner">
+                📅 Старые
+            </button>
+        </div>
+    </div>
+
+    <!-- Результаты -->
     {% for doc in results %}
-        <div class="card mb-3 shadow-sm">
+        <div class="card mb-3 shadow-sm border-{% if doc.is_public %}success{% else %}secondary{% endif %}">
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
                     <div>
                         {% for rubric in doc.rubrics %}
                             <span class="badge bg-secondary">{{ rubric }}</span>
@@ -21,15 +80,28 @@
                     </div>
                     <small class="text-muted">📅 {{ doc.created_date|date:"d.m.Y H:i" }}</small>
                 </div>
-                <div class="card-text">{{ doc.text|striptags|truncatewords:50 }}</div>
-                <div class="mt-3">
-                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#docModal-{{ doc.id }}">
-                        📄 Быстрый просмотр
+
+                <div class="card-text">
+                    {% if doc.highlight %}
+                        {{ doc.highlight|safe }}
+                    {% else %}
+                        {{ doc.text|striptags|truncatewords:50 }}
+                    {% endif %}
+                </div>
+
+                <div class="mt-3 d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary"
+                            data-bs-toggle="modal" data-bs-target="#docModal-{{ doc.id }}">
+                        👁️ Быстрый просмотр
                     </button>
+                    <a href="{% url 'document_detail' doc.id %}" class="btn btn-sm btn-outline-secondary">
+                        📄 Открыть
+                    </a>
                 </div>
             </div>
         </div>
 
+        <!-- Модальное окно -->
         <div class="modal fade" id="docModal-{{ doc.id }}" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <div class="modal-content">
@@ -42,7 +114,7 @@
                         </h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    <div class="modal-body">
                         <div class="mb-3">
                             {% if doc.is_public %}
                                 <span class="badge bg-success">🌍 Публичный документ</span>
@@ -55,7 +127,6 @@
                         <small class="text-muted">📅 Создан: {{ doc.created_date|date:"d.m.Y H:i" }}</small>
                     </div>
                     <div class="modal-footer">
-                        <a href="{% url 'document_detail' doc.id %}" class="btn btn-outline-primary">📄 Открыть на отдельной странице</a>
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
                     </div>
                 </div>
@@ -63,30 +134,47 @@
         </div>
     {% endfor %}
 
+    <!-- Пагинация -->
     {% if total_pages > 1 %}
     <nav class="mt-4">
-        <ul class="pagination justify-content-center">
+        <ul class="pagination justify-content-center flex-wrap">
             {% if page > 1 %}
             <li class="page-item">
                 <button class="page-link"
                         hx-post="{% url 'search_results' %}"
-                        hx-vals='{"page": {{ page|add:"-1" }}, "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}"}'
+                        hx-vals='{"page": {{ page|add:"-1" }}, "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}", "sort": "{{ sort }}"}'
                         hx-target="#search-results"
-                        hx-swap="outerHTML">
+                        hx-indicator="#spinner">
                     ← Предыдущая
                 </button>
             </li>
             {% endif %}
 
-            <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+            {% for p in page_range %}
+                {% if p == page %}
+                    <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                {% elif p != '...' %}
+                    <li class="page-item">
+                        <button class="page-link"
+                                hx-post="{% url 'search_results' %}"
+                                hx-vals='{"page": {{ p }}, "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}", "sort": "{{ sort }}"}'
+                                hx-target="#search-results"
+                                hx-indicator="#spinner">
+                            {{ p }}
+                        </button>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
 
             {% if page < total_pages %}
             <li class="page-item">
                 <button class="page-link"
                         hx-post="{% url 'search_results' %}"
-                        hx-vals='{"page": {{ page|add:"1" }}, "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}"}'
+                        hx-vals='{"page": {{ page|add:"1" }}, "query": "{{ query }}", "rubric": "{{ rubric }}", "privacy": "{{ privacy }}", "sort": "{{ sort }}"}'
                         hx-target="#search-results"
-                        hx-swap="outerHTML">
+                        hx-indicator="#spinner">
                     Следующая →
                 </button>
             </li>
@@ -96,7 +184,28 @@
     {% endif %}
 
 {% elif query %}
-    <div class="alert alert-warning">По вашему запросу "{{ query }}" ничего не найдено</div>
+    <div class="alert alert-warning">
+        <strong>😕 Ничего не найдено</strong> по запросу <strong>"{{ query }}"</strong>
+        <hr>
+        <small>💡 Попробуйте:</small>
+        <ul class="mb-0 mt-1">
+            <li>Использовать более общие слова</li>
+            <li>Проверить орфографию</li>
+            <li>
+                <button class="btn btn-link btn-sm p-0"
+                        hx-post="{% url 'search_results' %}"
+                        hx-vals='{"reset": "true"}'
+                        hx-target="#search-results"
+                        hx-indicator="#spinner">
+                    Сбросить фильтры
+                </button>
+            </li>
+        </ul>
+    </div>
+
 {% else %}
-    <div class="alert alert-info">Введите запрос для поиска</div>
+    <div class="alert alert-info text-center">
+        <strong>💡 Введите поисковый запрос</strong><br>
+        <small>Например: отчет, приказ, договор, CI, git</small>
+    </div>
 {% endif %}

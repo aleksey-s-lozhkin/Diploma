@@ -64,6 +64,7 @@ services:
         gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --log-level debug --access-logfile -
       "
     volumes:
+      - .:/app
       - ./static:/app/static
       - ./media:/app/media
       - ./logs:/app/logs
@@ -87,6 +88,12 @@ services:
         condition: service_healthy
     expose:
       - "8000"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health/" ]
+      interval: 30s      # Проверять каждые 30 секунд
+      timeout: 10s       # Таймаут проверки 10 секунд
+      retries: 3         # 3 неудачные попытки = unhealthy
+      start_period: 40s  # Дать время на запуск
     networks:
       - app_network
 
@@ -99,7 +106,14 @@ services:
       - ./static:/app/static:ro
       - ./media:/app/media:ro
     depends_on:
-      - web
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     networks:
       - app_network
 

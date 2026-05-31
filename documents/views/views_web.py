@@ -1,7 +1,6 @@
+import logging
 import os
-import re
 
-import bleach
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -15,43 +14,16 @@ from django.views import View
 from django.views.decorators.cache import cache_page, never_cache
 from django.views.decorators.vary import vary_on_cookie
 from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
-from elasticsearch_dsl import Search
-from elasticsearch_dsl.connections import connections
+from elasticsearch.exceptions import ConnectionError, NotFoundError
 
-from .models import Document, SearchHistory
-from .rate_limit import check_rate_limit
-from .utils import extract_text_from_file
+from documents.models import Document, SearchHistory
+from documents.rate_limit import RateLimiters
+from documents.services.search_service import SearchService
+from documents.utils import extract_text_from_file
 
-ALLOWED_TAGS = [
-    "p",
-    "br",
-    "b",
-    "i",
-    "u",
-    "strong",
-    "em",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "ul",
-    "ol",
-    "li",
-    "table",
-    "tr",
-    "td",
-    "th",
-    "thead",
-    "tbody",
-    "a",
-    "img",
-    "pre",
-    "code",
-    "blockquote",
-    "hr",
-    "div",
-    "span",
-]
+logger = logging.getLogger(__name__)
+
+MAX_TEXT_LENGTH = 100000
 
 
 class LogoutView(View):
@@ -78,96 +50,140 @@ class IndexView(View):
 class SearchResultsView(View):
     def post(self, request):
         user_id = request.user.id
-        is_allowed, remaining, retry_after = check_rate_limit(f"search_{user_id}", 20, 60)
 
-        if not is_allowed:
+        # Обработка сброса фильтров
+        if request.POST.get("reset") == "true":
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "reset": True,
+                },
+            )
+
+        query = request.POST.get("query", "").strip()
+        rubric = request.POST.get("rubric", "")
+        privacy = request.POST.get("privacy", "all")
+        page = int(request.POST.get("page", 1))
+        sort_by = request.POST.get("sort", "relevance")
+
+        # Пустой запрос - показываем подсказку
+        if not query:
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "empty_query": True,
+                },
+            )
+
+        limiter = RateLimiters.api_search()
+        allowed, remaining, retry_after = limiter.check(f"user_{user_id}")
+
+        if not allowed:
             return render(
                 request,
                 "partials/search_results.html",
                 {
                     "results": [],
-                    "query": request.POST.get("query", ""),
+                    "query": query,
                     "error": f"⏱️ Слишком много запросов. Подождите {retry_after} секунд.",
                 },
             )
 
         try:
-            query = request.POST.get("query", "")
-            rubric = request.POST.get("rubric", "")
-            privacy = request.POST.get("privacy", "all")
-            page = int(request.POST.get("page", 1))
-            page_size = 20
-
-            if not query:
-                return render(request, "partials/search_results.html", {"results": [], "query": ""})
-
-            connections.configure(default={"hosts": "http://elasticsearch:9200"})
-
-            s = Search(index="documents").query(
-                "bool",
-                must=[{"match": {"text": query}}],
+            # Используем сервис поиска
+            service = SearchService(request.user)
+            search_response = service.search(
+                query=query,
+                rubric=rubric,
+                privacy=privacy,
+                page=page,
+                save_history=True,
+                with_highlights=True,
+                with_truncation=False,
             )
 
-            s = s.query(
-                "bool",
-                should=[{"term": {"user_id": request.user.id}}, {"term": {"is_public": True}}],
-                minimum_should_match=1,
-            )
+            results_list = [r.to_dict() for r in search_response.results]
 
-            if rubric and rubric != "":
-                s = s.query("match", rubrics=rubric)
+            if sort_by == "date":
+                results_list.sort(key=lambda x: x.get("created_date", ""), reverse=True)
+            elif sort_by == "date_asc":
+                results_list.sort(key=lambda x: x.get("created_date", ""))
 
-            if privacy == "public":
-                s = s.query("term", is_public=True)
-            elif privacy == "private":
-                s = s.query("term", user_id=request.user.id)
+            # Получаем page_range для пагинации
+            total_pages = search_response.total_pages
+            current_page = page
 
-            start = (page - 1) * page_size
-            s = s[start : start + page_size]
-
-            response = s.execute()
-
-            if page == 1:
-                SearchHistory.objects.create(user=request.user, query=query, results_count=response.hits.total.value)
-
-            results = []
-            for hit in response:
-                highlights = []
-                if hasattr(hit.meta, "highlight") and "text" in hit.meta.highlight:
-                    for fragment in hit.meta.highlight.text:
-                        cleaned = re.sub(r"\s+", " ", fragment).strip()
-                        if cleaned:
-                            highlights.append(cleaned)
-
-                results.append(
-                    {
-                        "id": hit.id,
-                        "rubrics": hit.rubrics,
-                        "text": hit.text,
-                        "created_date": hit.created_date,
-                        "highlights": highlights,
-                        "is_public": hit.is_public,
-                    }
-                )
-
-            total = response.hits.total.value
-            total_pages = (total + page_size - 1) // page_size
+            if total_pages <= 7:
+                page_range = list(range(1, total_pages + 1))
+            else:
+                if current_page <= 4:
+                    page_range = [1, 2, 3, 4, 5, "...", total_pages - 1, total_pages]
+                elif current_page >= total_pages - 3:
+                    page_range = [
+                        1,
+                        2,
+                        "...",
+                        total_pages - 4,
+                        total_pages - 3,
+                        total_pages - 2,
+                        total_pages - 1,
+                        total_pages,
+                    ]
+                else:
+                    page_range = [1, "...", current_page - 1, current_page, current_page + 1, "...", total_pages]
 
             return render(
                 request,
                 "partials/search_results.html",
                 {
-                    "results": results,
+                    "results": results_list,
                     "query": query,
                     "page": page,
                     "total_pages": total_pages,
-                    "total": total,
+                    "total": search_response.total,
                     "rubric": rubric,
                     "privacy": privacy,
+                    "page_range": page_range,
+                    "sort": sort_by,
                 },
             )
+        except ConnectionError as e:
+            logger.warning(f"Elasticsearch connection failed for user {user_id}: {e}")
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": [],
+                    "query": query,
+                    "error": "🔍 Поиск временно недоступен. Пожалуйста, попробуйте позже.",
+                },
+            )
+
+        except NotFoundError as e:
+            logger.error(f"Elasticsearch index 'documents' not found: {e}")
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": [],
+                    "query": query,
+                    "error": "⚙️ Ошибка конфигурации поиска. Администратор уже уведомлён.",
+                },
+            )
+
         except Exception as e:
-            return render(request, "partials/search_results.html", {"results": [], "query": query, "error": str(e)})
+            logger.exception(f"Unexpected search error for user {user_id}: {e}")
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "results": [],
+                    "query": query,
+                    "error": "❌ Произошла внутренняя ошибка. Мы уже работаем над этим.",
+                },
+            )
 
 
 @method_decorator(never_cache, name="dispatch")
@@ -217,13 +233,55 @@ class DocumentCreateView(View):
         )
 
     def post(self, request):
+        limiter = RateLimiters.api_general()
+        allowed, remaining, retry_after = limiter.check(f"user_{request.user.id}_create")
+
+        if not allowed:
+            messages.error(request, f"Слишком много действий. Подождите {retry_after} секунд.")
+            return redirect("dashboard")
+
         rubrics_str = request.POST.get("rubrics", "")
         rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
-        raw_text = request.POST.get("text", "")
+
+        # Проверка количества рубрик
+        if len(rubrics) > 10:
+            messages.error(request, "Не более 10 рубрик")
+            return render(
+                request,
+                "document_form.html",
+                {
+                    "is_edit": False,
+                    "rubrics_value": rubrics_str,
+                    "text_value": request.POST.get("text", ""),
+                    "text_source": request.POST.get("text_source", "manual"),
+                    "is_file_uploaded": bool(request.FILES.get("file")),
+                },
+            )
+
+        # Проверка длины каждой рубрики
+        for rubric in rubrics:
+            if len(rubric) > 100:
+                messages.error(request, f"Рубрика '{rubric[:50]}...' слишком длинная. Максимум 100 символов.")
+                return render(
+                    request,
+                    "document_form.html",
+                    {
+                        "is_edit": False,
+                        "rubrics_value": rubrics_str,
+                        "text_value": request.POST.get("text", ""),
+                        "text_source": request.POST.get("text_source", "manual"),
+                        "is_file_uploaded": bool(request.FILES.get("file")),
+                    },
+                )
+
+        raw_text = request.POST.get("text", "").strip()
         is_public = request.POST.get("is_public") == "on"
 
+        if len(raw_text) > MAX_TEXT_LENGTH:
+            messages.error(request, f"Текст слишком длинный (максимум {MAX_TEXT_LENGTH} символов)")
+            return render(request, "document_form.html", {"form": request.POST})
+
         text_source = "manual"
-        final_text = raw_text
         uploaded_file = request.FILES.get("file")
 
         if uploaded_file:
@@ -254,11 +312,10 @@ class DocumentCreateView(View):
                 return response
             return redirect("dashboard")
 
-        cleaned_text = bleach.clean(final_text, tags=ALLOWED_TAGS, strip=True)
         Document.objects.create(
             user=request.user,
             rubrics=rubrics,
-            text=cleaned_text,
+            text=raw_text,
             is_public=is_public,
             file=None,
             file_name="",
@@ -317,7 +374,7 @@ class ClearHistoryView(View):
 @method_decorator(login_required, name="dispatch")
 class DocumentDetailView(View):
     def get(self, request, pk):
-        doc = get_object_or_404(Document, pk=pk, user=request.user)
+        doc = get_object_or_404(Document, Q(user=request.user) | Q(is_public=True), pk=pk)
         return render(request, "document_detail.html", {"doc": doc})
 
 

@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from django.contrib import messages
@@ -8,9 +9,12 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django_htmx.http import HttpResponseClientRedirect
 
-from .email_utils import send_password_reset_email, send_verification_email
-from .forms import ChangePasswordForm, LoginForm, PasswordResetConfirmForm, PasswordResetRequestForm, RegisterForm
-from .models import User
+from documents.rate_limit import RateLimiters
+from users.email_utils import send_password_reset_email, send_verification_email
+from users.forms import ChangePasswordForm, LoginForm, PasswordResetConfirmForm, PasswordResetRequestForm, RegisterForm
+from users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 class LoginView(View):
@@ -23,6 +27,15 @@ class LoginView(View):
     def post(self, request):
         if request.user.is_authenticated:
             return redirect("dashboard")
+
+        # Rate limiting по email
+        email = request.POST.get("email")
+        limiter = RateLimiters.login()
+        allowed, remaining, retry_after = limiter.check(email)
+
+        if not allowed:
+            messages.error(request, f"Слишком много попыток входа. Попробуйте через {retry_after} секунд.")
+            return render(request, "users/login.html", {"form": LoginForm()})
 
         form = LoginForm(request.POST)
         if form.is_valid():
@@ -47,46 +60,67 @@ class LoginView(View):
 
 
 class RegisterView(View):
+    def _redirect(self, url):
+        if self.request.htmx:
+            return HttpResponseClientRedirect(url)
+        return redirect(url)
+
     def get(self, request):
         if request.user.is_authenticated:
-            if request.htmx:
-                return HttpResponseClientRedirect("/dashboard/")
-            return redirect("dashboard")
+            return self._redirect("/dashboard/")
         form = RegisterForm()
         return render(request, "users/register.html", {"form": form})
 
     def post(self, request):
         if request.user.is_authenticated:
-            if request.htmx:
-                return HttpResponseClientRedirect("/dashboard/")
-            return redirect("dashboard")
+            return self._redirect("/dashboard/")
 
         form = RegisterForm(request.POST)
         if form.is_valid():
             email = form.cleaned_data["email"]
             password = form.cleaned_data["password1"]
-            first_name = form.cleaned_data.get("first_name", "")
-            last_name = form.cleaned_data.get("last_name", "")
+            first_name = form.cleaned_data.get("first_name", "").strip()
+            last_name = form.cleaned_data.get("last_name", "").strip()
 
-            user = User.objects.create_user(
-                email=email,
-                password=password,
-                first_name=first_name,
-                last_name=last_name,
-                is_active=False,
-                is_email_verified=False,
-            )
+            # Rate limiting по email
+            limiter = RateLimiters.register()
+            allowed, remaining, retry_after = limiter.check(email)
 
-            send_verification_email(user, request)
+            if not allowed:
+                logger.warning(f"Registration rate limit exceeded for email: {email}")
+                messages.error(
+                    request, f"Слишком много попыток для этого email. Попробуйте через {retry_after} секунд."
+                )
+                return render(request, "users/register.html", {"form": form})
 
-            messages.success(request, f"Регистрация успешна! На {email} отправлено письмо с подтверждением.")
+            # Проверка существующего пользователя
+            if User.objects.filter(email=email).exists():
+                logger.warning(f"Registration attempt with existing email: {email}")
+                messages.error(request, "Пользователь с таким email уже существует")
+                return render(request, "users/register.html", {"form": form})
 
-            if request.htmx:
-                return HttpResponseClientRedirect("/login/")
-            return redirect("login")
+            try:
+                user = User.objects.create_user(
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    is_active=True,
+                    is_email_verified=False,
+                )
 
-        if request.htmx:
-            return render(request, "users/register.html", {"form": form})
+                send_verification_email(user, request)
+
+                logger.info(f"User registered successfully: {email}")
+                messages.success(request, f"Регистрация успешна! На {email} отправлено письмо с подтверждением.")
+
+                return self._redirect("/login/")
+
+            except Exception as e:
+                logger.error(f"Registration failed for {email}: {str(e)}")
+                messages.error(request, "Произошла ошибка при регистрации. Попробуйте позже.")
+                return render(request, "users/register.html", {"form": form})
+
         return render(request, "users/register.html", {"form": form})
 
 
@@ -111,8 +145,6 @@ class VerifyEmailView(View):
 
 
 class PasswordResetRequestView(View):
-    """Запрос на сброс пароля"""
-
     def get(self, request):
         if request.user.is_authenticated:
             if request.htmx:
@@ -127,12 +159,28 @@ class PasswordResetRequestView(View):
                 return HttpResponseClientRedirect("/dashboard/")
             return redirect("dashboard")
 
+        email = request.POST.get("email")
+
+        # Rate limiting по email
+        limiter = RateLimiters.password_reset()
+        allowed, remaining, retry_after = limiter.check(email)
+
+        if not allowed:
+            # Не показываем ошибку, чтобы не раскрывать существование email
+            messages.success(request, "Если пользователь с таким email существует, инструкции отправлены.")
+            if request.htmx:
+                return HttpResponseClientRedirect("/login/")
+            return redirect("login")
+
         form = PasswordResetRequestForm(request.POST)
         if form.is_valid():
             email = form.cleaned_data["email"]
-            user = User.objects.get(email=email)
-
-            send_password_reset_email(user, request)
+            try:
+                user = User.objects.get(email=email)
+                send_password_reset_email(user, request)
+            except User.DoesNotExist:
+                # Не сообщаем, что пользователь не найден (безопасность)
+                pass
 
             messages.success(request, f"Инструкции по сбросу пароля отправлены на {email}")
 
@@ -146,8 +194,6 @@ class PasswordResetRequestView(View):
 
 
 class PasswordResetConfirmView(View):
-    """Подтверждение сброса пароля и установка нового"""
-
     def get(self, request, token):
         if request.user.is_authenticated:
             if request.htmx:
@@ -209,8 +255,6 @@ class PasswordResetConfirmView(View):
 
 @method_decorator(login_required, name="dispatch")
 class ChangePasswordView(View):
-    """Смена пароля авторизованным пользователем"""
-
     def get(self, request):
         form = ChangePasswordForm()
         return render(request, "users/change_password.html", {"form": form})

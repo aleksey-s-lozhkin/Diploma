@@ -1,0 +1,314 @@
+import logging
+import os
+
+from django.conf import settings
+from django.db import models
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from rest_framework import permissions, status, viewsets
+from rest_framework.parsers import JSONParser, MultiPartParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from documents.models import Document, SearchHistory
+from documents.rate_limit import RateLimiters
+from documents.serializers import DocumentCreateUpdateSerializer, DocumentSerializer
+from documents.services.search_service import SearchService
+from documents.utils import extract_text_from_file
+
+logger = logging.getLogger(__name__)
+
+
+class SearchView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["search"],
+        description="Полнотекстовый поиск по документам с фильтрацией",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Поисковый запрос", "example": "python разработка"},
+                    "rubric": {"type": "string", "description": "Фильтр по рубрике", "example": "технологии"},
+                    "privacy": {
+                        "type": "string",
+                        "enum": ["all", "public", "private"],
+                        "description": "Тип доступа",
+                        "default": "all",
+                    },
+                    "page": {"type": "integer", "description": "Номер страницы", "default": 1},
+                },
+                "required": ["query"],
+            }
+        },
+        responses={
+            200: OpenApiResponse(description="Успешный поиск"),
+            400: OpenApiResponse(description="Query parameter 'query' required"),
+            401: OpenApiResponse(description="Не авторизован"),
+            429: OpenApiResponse(description="Too many requests (30 per minute)"),
+        },
+    )
+    def post(self, request):
+        user_id = request.user.id
+
+        # Rate limiting
+        limiter = RateLimiters.api_search()
+        allowed, remaining, retry_after = limiter.check(f"user_{user_id}")
+
+        if not allowed:
+            logger.warning(f"Rate limit exceeded for search: user {user_id}")
+            return Response(
+                {"error": f"Too many requests. Please wait {retry_after} seconds."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={"X-RateLimit-Retry-After": str(retry_after)},
+            )
+
+        # Получаем параметры запроса
+        query = request.data.get("query", "").strip()
+        rubric = request.data.get("rubric", "")
+        privacy = request.data.get("privacy", "all")
+        page = int(request.data.get("page", 1))
+
+        if not query:
+            return Response({"error": "Query parameter 'query' required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Используем сервис поиска
+        service = SearchService(request.user)
+        search_response = service.search(
+            query=query,
+            rubric=rubric,
+            privacy=privacy,
+            page=page,
+            save_history=True,
+            with_highlights=False,
+            with_truncation=True,
+        )
+
+        total_pages = search_response.total_pages
+
+        return Response(
+            {
+                "count": search_response.total,
+                "next": page + 1 if page < total_pages else None,
+                "previous": page - 1 if page > 1 else None,
+                "results": [r.to_dict() for r in search_response.results],
+            },
+            headers={
+                "X-RateLimit-Limit": str(limiter.limit),
+                "X-RateLimit-Remaining": str(remaining),
+            },
+        )
+
+
+class DocumentViewSet(viewsets.ModelViewSet):
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser]
+
+    @extend_schema(
+        tags=["documents"],
+        description="Получить список всех документов пользователя",
+        responses={200: DocumentSerializer(many=True)},
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        tags=["documents"],
+        description="Создать новый документ (текст или файл)",
+        request={
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "rubrics": {
+                        "type": "string",
+                        "description": "Рубрики через запятую",
+                        "example": "технологии, python, django",
+                    },
+                    "text": {"type": "string", "description": "Текст документа (если без файла)"},
+                    "is_public": {"type": "boolean", "description": "Публичный доступ", "default": False},
+                    "file": {"type": "string", "format": "binary", "description": "Файл (PDF, DOCX, XLSX, TXT)"},
+                },
+            }
+        },
+        responses={201: DocumentSerializer()},
+    )
+    def create(self, request, *args, **kwargs):
+        # Rate limiting
+        limiter = RateLimiters.api_general()
+        allowed, remaining, retry_after = limiter.check(f"user_{request.user.id}_create")
+
+        if not allowed:
+            logger.warning(f"Rate limit exceeded for document create: user {request.user.id}")
+            from rest_framework.exceptions import Throttled
+
+            raise Throttled(wait=retry_after)
+
+        # Обработка рубрик
+        rubrics_data = request.data.get("rubrics", [])
+        if isinstance(rubrics_data, str):
+            rubrics = [r.strip() for r in rubrics_data.split(",") if r.strip()]
+        else:
+            rubrics = rubrics_data
+
+        # Обработка is_public
+        is_public = request.data.get("is_public", False)
+        if isinstance(is_public, str):
+            is_public = is_public.lower() == "true"
+
+        uploaded_file = request.FILES.get("file")
+
+        if uploaded_file:
+            file_name = uploaded_file.name
+            file_type = file_name.split(".")[-1].lower()
+
+            allowed_types = ["pdf", "docx", "xlsx", "txt"]
+            if file_type not in allowed_types:
+                logger.warning(f"Unsupported file type {file_type} uploaded by user {request.user.id}")
+                return Response(
+                    {"error": f"Неподдерживаемый тип файла. Разрешены: {', '.join(allowed_types)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if len(rubrics) > 10:
+                return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
+
+            document = Document.objects.create(
+                user=request.user,
+                rubrics=rubrics,
+                text="",
+                is_public=is_public,
+                file=uploaded_file,
+                file_name=file_name,
+                file_type=file_type,
+                text_source="file",
+            )
+
+            file_path = os.path.join(settings.MEDIA_ROOT, document.file.name)
+            extracted_text = extract_text_from_file(file_path, file_type)
+            document.text = extracted_text
+            document.save()
+
+            output_serializer = DocumentSerializer(document)
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+        else:
+            text = request.data.get("text", "")
+            if not text:
+                return Response(
+                    {"error": "Укажите либо 'text', либо загрузите 'file'"}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if len(rubrics) > 10:
+                return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
+
+            create_serializer = DocumentCreateUpdateSerializer(data=request.data)
+            create_serializer.is_valid(raise_exception=True)
+
+            document = Document.objects.create(
+                user=request.user,
+                rubrics=create_serializer.validated_data.get("rubrics", []),
+                text=create_serializer.validated_data["text"],
+                is_public=create_serializer.validated_data.get("is_public", False),
+            )
+
+            output_serializer = DocumentSerializer(document)
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        tags=["documents"],
+        description="Получить документ по ID",
+        responses={200: DocumentSerializer()},
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
+        tags=["documents"],
+        description="Обновить документ полностью",
+        request=DocumentCreateUpdateSerializer,
+        responses={200: DocumentSerializer()},
+    )
+    def update(self, request, *args, **kwargs):
+        # Rate limiting на обновление
+        limiter = RateLimiters.api_general()
+        allowed, remaining, retry_after = limiter.check(f"user_{request.user.id}_update")
+
+        if not allowed:
+            from rest_framework.exceptions import Throttled
+
+            raise Throttled(wait=retry_after)
+
+        return super().update(request, *args, **kwargs)
+
+    @extend_schema(
+        tags=["documents"],
+        description="Частично обновить документ",
+        request=DocumentCreateUpdateSerializer,
+        responses={200: DocumentSerializer()},
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @extend_schema(
+        tags=["documents"],
+        description="Удалить документ",
+        responses={204: OpenApiResponse(description="Документ удалён")},
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return Document.objects.filter(user=self.request.user).order_by("-created_date")
+
+    def get_serializer_class(self):
+        if self.action in ["create", "update", "partial_update"]:
+            return DocumentCreateUpdateSerializer
+        return DocumentSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class RubricsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["search"],
+        description="Получить список всех рубрик из доступных пользователю документов",
+        responses={
+            200: OpenApiResponse(description="Список рубрик", response={"type": "array", "items": {"type": "string"}})
+        },
+    )
+    def get(self, request):
+        documents = Document.objects.filter(models.Q(user=request.user) | models.Q(is_public=True)).values_list(
+            "rubrics", flat=True
+        )
+
+        unique_rubrics = set()
+        for rubrics_list in documents:
+            for rubric in rubrics_list:
+                unique_rubrics.add(rubric)
+
+        return Response(sorted(unique_rubrics))
+
+
+class SearchHistoryDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["search"],
+        description="Удалить запись из истории поиска",
+        parameters=[OpenApiParameter(name="pk", type=int, location="path", description="ID записи истории")],
+        responses={
+            204: OpenApiResponse(description="Удалено"),
+            404: OpenApiResponse(description="Не найдено"),
+        },
+    )
+    def delete(self, request, pk):
+        try:
+            history = SearchHistory.objects.get(pk=pk, user=request.user)
+            history.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except SearchHistory.DoesNotExist:
+            return Response({"error": "History entry not found"}, status=status.HTTP_404_NOT_FOUND)
