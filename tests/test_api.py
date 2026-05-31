@@ -121,7 +121,7 @@ class UsersViewsAPITestCase(APITestCase):
         """Rate limiting при входе"""
         data = {"email": "test@example.com", "password": "wrongpass"}
 
-        for i in range(10):
+        for _ in range(10):
             response = self.client.post(self.login_url, data, format="json")
             self.assertNotEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 

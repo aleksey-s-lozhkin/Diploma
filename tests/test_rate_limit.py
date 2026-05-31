@@ -19,13 +19,13 @@ class RateLimiterLogicTest(TestCase):
 
     def test_requests_within_limit(self):
         """Запросы в пределах лимита"""
-        for i in range(3):
+        for _ in range(3):
             allowed, _, _ = self.limiter.check("test_key")
             self.assertTrue(allowed)
 
     def test_exceed_limit(self):
         """Превышение лимита"""
-        for i in range(4):
+        for _ in range(4):
             allowed, _, _ = self.limiter.check("test_key")
         self.assertFalse(allowed)
 

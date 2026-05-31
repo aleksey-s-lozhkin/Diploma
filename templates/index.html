@@ -13,60 +13,93 @@
                 {% if user.is_authenticated %}
                 <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 
-                <div class="mb-3">
+                <!-- Поле поиска + кнопка -->
+                <div class="input-group mb-3">
                     <input type="text"
                            class="form-control form-control-lg"
                            name="query"
                            id="search-query"
                            placeholder="Введите поисковый запрос..."
                            hx-post="{% url 'search_results' %}"
-                           hx-trigger="keyup changed delay:300ms"
+                           hx-trigger="keyup changed delay:500ms"
                            hx-target="#search-results"
                            hx-indicator="#spinner"
                            hx-include="[name='rubric'], [name='privacy']"
                            autocomplete="off">
-                    <div id="spinner" class="htmx-indicator text-center mt-2">
-                        <div class="spinner-border text-primary" role="status"></div>
+                    <button class="btn btn-primary btn-lg"
+                            hx-post="{% url 'search_results' %}"
+                            hx-target="#search-results"
+                            hx-indicator="#spinner"
+                            hx-include="[name='query'], [name='rubric'], [name='privacy']">
+                        🔍 Найти
+                    </button>
+                </div>
+                <div id="spinner" class="htmx-indicator text-center mt-2">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label fw-bold">📂 Рубрики:</label>
-                    <select name="rubric"
-                            id="rubric-select"
-                            class="form-select"
-                            hx-post="{% url 'search_results' %}"
-                            hx-trigger="change"
-                            hx-target="#search-results"
-                            hx-indicator="#spinner"
-                            hx-include="[name='query'], [name='privacy']">
-                        <option value="">Все рубрики</option>
-                        {% for rubric in rubrics %}
-                        <option value="{{ rubric }}">{{ rubric }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+                <!-- Фильтры в одной строке -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold">📂 Рубрики:</label>
+                        <select name="rubric"
+                                id="rubric-select"
+                                class="form-select"
+                                hx-post="{% url 'search_results' %}"
+                                hx-trigger="change"
+                                hx-target="#search-results"
+                                hx-indicator="#spinner"
+                                hx-include="[name='query'], [name='privacy']">
+                            <option value="">Все рубрики</option>
+                            {% for rubric in rubrics %}
+                            <option value="{{ rubric }}">{{ rubric }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
 
-                <div class="mb-3">
-                    <label class="form-label fw-bold">🔒 Тип доступа:</label>
-                    <select name="privacy"
-                            id="privacy-select"
-                            class="form-select"
-                            hx-post="{% url 'search_results' %}"
-                            hx-trigger="change"
-                            hx-target="#search-results"
-                            hx-indicator="#spinner"
-                            hx-include="[name='query'], [name='rubric']">
-                        <option value="all">Все документы</option>
-                        <option value="public">🌍 Только публичные</option>
-                        <option value="private">🔒 Только мои</option>
-                    </select>
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold">🔒 Тип доступа:</label>
+                        <select name="privacy"
+                                id="privacy-select"
+                                class="form-select"
+                                hx-post="{% url 'search_results' %}"
+                                hx-trigger="change"
+                                hx-target="#search-results"
+                                hx-indicator="#spinner"
+                                hx-include="[name='query'], [name='rubric']">
+                            <option value="all">Все документы</option>
+                            <option value="public">🌍 Только публичные</option>
+                            <option value="private">🔒 Только мои</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-outline-secondary w-100"
+                                id="reset-button"
+                                type="button"
+                                hx-post="{% url 'search_results' %}"
+                                hx-vals='{"reset": "true"}'
+                                hx-target="#search-results"
+                                hx-indicator="#spinner"
+                                hx-swap="outerHTML"
+                                onclick="
+                                    setTimeout(() => {
+                                        document.getElementById('search-query').value = '';
+                                        document.getElementById('rubric-select').value = '';
+                                        document.getElementById('privacy-select').value = 'all';
+                                    }, 50);
+                                ">
+                            🧹 Сбросить
+                        </button>
+                    </div>
                 </div>
 
                 {% else %}
                 <div class="alert alert-warning text-center">
                     🔐 Для использования поиска
-                    <a href="{% url 'login' %}" class="alert-link">войдите в систему</a> или
+                    <a href="{% url 'login' %}?next={{ request.path }}" class="alert-link">войдите в систему</a> или
                     <a href="{% url 'register' %}" class="alert-link">зарегистрируйтесь</a>.
                 </div>
                 {% endif %}

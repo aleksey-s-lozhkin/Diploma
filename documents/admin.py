@@ -6,6 +6,8 @@ from .models import Document, SearchHistory
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
+    """Админ-панель для модели Document"""
+
     list_display = ["id", "user", "rubrics_preview", "text_preview", "created_date"]
     list_filter = ["user", "created_date", "rubrics"]
     search_fields = ["text", "rubrics"]
@@ -16,6 +18,7 @@ class DocumentAdmin(admin.ModelAdmin):
     actions = ["delete_selected"]
 
     def rubrics_preview(self, obj):
+        """Отображает превью рубрик (первые 3)"""
         if obj.rubrics:
             return ", ".join(obj.rubrics[:3])
         return "-"
@@ -23,6 +26,7 @@ class DocumentAdmin(admin.ModelAdmin):
     rubrics_preview.short_description = "Рубрики"
 
     def text_preview(self, obj):
+        """Отображает превью текста (первые 100 символов) с всплывающей подсказкой"""
         if obj.text:
             preview = obj.text[:100]
             if len(obj.text) > 100:
@@ -33,25 +37,31 @@ class DocumentAdmin(admin.ModelAdmin):
     text_preview.short_description = "Текст (превью)"
 
     def save_model(self, request, obj, form, change):
+        """При создании документа автоматически устанавливает текущего пользователя"""
         if not obj.pk:
             obj.user = request.user
         super().save_model(request, obj, form, change)
 
     def get_queryset(self, request):
+        """Оптимизация: подгружаем пользователя при запросе списка"""
         return super().get_queryset(request).select_related("user")
 
 
 @admin.register(SearchHistory)
 class SearchHistoryAdmin(admin.ModelAdmin):
+    """Админ-панель для модели SearchHistory (только чтение)"""
+
     list_display = ["id", "user", "query", "results_count", "created_at"]
     list_filter = ["user", "created_at"]
-    search_fields = ["query", "user__email"]  # изменено с user__username
+    search_fields = ["query", "user__email"]
     ordering = ["-created_at"]
     list_per_page = 25
     readonly_fields = ["user", "query", "results_count", "created_at"]
 
     def has_add_permission(self, request):
+        """Запрещаем добавление записей вручную"""
         return False
 
     def has_change_permission(self, request, obj=None):
+        """Запрещаем изменение записей"""
         return False

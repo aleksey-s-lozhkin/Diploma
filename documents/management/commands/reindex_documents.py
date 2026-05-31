@@ -1,12 +1,3 @@
-"""
-Management команда для переиндексации документов в Elasticsearch.
-Примеры использования:
-    # python manage.py reindex_documents - обычная переиндексация
-    # python manage.py reindex_documents --force - принудительная переиндексация (удалить индекс и создать заново)
-    # python manage.py reindex_documents --user-id 5 - для конкретного пользователя
-    # python manage.py reindex_documents --doc-id 123 - для одного документа
-"""
-
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from elasticsearch_dsl.connections import connections
@@ -18,6 +9,8 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
+    """Команда для переиндексации документов в Elasticsearch"""
+
     help = "Reindex documents to Elasticsearch"
 
     def add_arguments(self, parser):
@@ -52,7 +45,7 @@ class Command(BaseCommand):
 
         doc_index = DocumentIndex()
 
-        # Принудительная переиндексация
+        # Принудительная переиндексация (удаление существующего индекса)
         if options["force"]:
             self.stdout.write("Force mode enabled: deleting existing index...")
             try:
@@ -61,22 +54,25 @@ class Command(BaseCommand):
             except Exception as e:
                 self.stdout.write(self.style.WARNING(f"⚠ Warning: {e}"))
 
-        # Выбор документов для индексации
+        # Определяем набор документов для индексации
         if options["doc_id"]:
+            # Индексация одного документа по ID
             documents = Document.objects.filter(id=options["doc_id"])
             if not documents.exists():
                 raise CommandError(f"Document with id={options['doc_id']} not found")
             self.stdout.write(f"Reindexing single document (id={options['doc_id']})...")
         elif options["user_id"]:
+            # Индексация документов конкретного пользователя
             documents = Document.objects.filter(user_id=options["user_id"])
             if not documents.exists():
                 raise CommandError(f"No documents found for user_id={options['user_id']}")
             self.stdout.write(f"Reindexing {documents.count()} documents for user_id={options['user_id']}...")
         else:
+            # Полная переиндексация всех документов
             documents = Document.objects.all()
             self.stdout.write(f"Reindexing all {documents.count()} documents...")
 
-        # Переиндексация
+        # Процесс переиндексации
         success_count = 0
         error_count = 0
 
@@ -85,7 +81,7 @@ class Command(BaseCommand):
                 doc_index.update(doc)
                 success_count += 1
 
-                # Прогресс (каждые 100 документов)
+                # Отображение прогресса каждые 100 документов
                 if i % 100 == 0:
                     self.stdout.write(f"  Progress: {i}/{documents.count()} documents indexed")
 

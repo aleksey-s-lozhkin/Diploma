@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 class RateLimitResult:
     """Результат проверки rate limit"""
 
-    allowed: bool
-    remaining: int
-    retry_after: int
-    limit: int
-    period: int
+    allowed: bool  # Разрешён ли запрос
+    remaining: int  # Оставшееся количество запросов
+    retry_after: int  # Секунд до сброса лимита
+    limit: int  # Максимальное количество запросов
+    period: int  # Период в секундах
 
     def to_dict(self) -> dict:
         return {
@@ -33,46 +33,51 @@ class RateLimiter:
 
     def __init__(self, prefix: str, limit: int = 60, period: int = 60):
         self.prefix = prefix
-        self.limit = limit
-        self.period = period
+        self.limit = limit  # Максимальное количество запросов
+        self.period = period  # Временной период в секундах
         self._cache_key_template = f"rl:{prefix}:{{key}}"
 
     def _get_cache_key(self, key: str) -> str:
+        """Генерирует ключ для кэша"""
         return self._cache_key_template.format(key=key)
 
     def check(self, key: str) -> Tuple[bool, int, int]:
-        """Проверить rate limit для ключа"""
-
+        """Проверяет rate limit для ключа"""
         cache_key = self._get_cache_key(key)
         now = time.time()
 
         data = cache.get(cache_key)
 
+        # Первый запрос
         if data is None:
             cache.set(cache_key, {"count": 1, "window_start": now}, timeout=self.period)
             logger.debug(f"[RL:{self.prefix}] First request for {key}")
             return True, self.limit - 1, 0
 
+        # Временное окно истекло - сбрасываем счётчик
         if now - data["window_start"] > self.period:
             cache.set(cache_key, {"count": 1, "window_start": now}, timeout=self.period)
             logger.debug(f"[RL:{self.prefix}] Window expired for {key}")
             return True, self.limit - 1, 0
 
+        # Увеличиваем счётчик
         data["count"] += 1
         logger.debug(f"[RL:{self.prefix}] {key}: count={data['count']}, limit={self.limit}")
 
+        # Проверяем превышение лимита
         if data["count"] > self.limit:
             retry_after = int(self.period - (now - data["window_start"]))
             logger.warning(f"[RL:{self.prefix}] LIMIT EXCEEDED for {key}, retry_after={retry_after}")
             return False, 0, retry_after
 
+        # Сохраняем обновлённые данные
         cache.set(cache_key, data, timeout=self.period)
         remaining = self.limit - data["count"]
 
         return True, remaining, 0
 
     def check_with_result(self, key: str) -> RateLimitResult:
-        """Вернуть результат в виде объекта"""
+        """Вернуть результат в виде объекта RateLimitResult"""
         allowed, remaining, retry_after = self.check(key)
         return RateLimitResult(
             allowed=allowed,
@@ -89,14 +94,14 @@ class RateLimiter:
         logger.info(f"[RL:{self.prefix}] Reset for {key}")
 
     def get_current_count(self, key: str) -> int:
-        """Получить текущее количество запросов"""
+        """Получить текущее количество запросов для ключа"""
         cache_key = self._get_cache_key(key)
         data = cache.get(cache_key)
         return data["count"] if data else 0
 
 
 class RateLimiters:
-    """Предустановленные лимитеры"""
+    """Предустановленные конфигурации лимитеров для разных эндпоинтов"""
 
     @staticmethod
     def register() -> RateLimiter:

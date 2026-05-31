@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def invalidate_user_cache(user_id):
-    """Очищает кэш для конкретного пользователя"""
+    """Очищает все кэши, связанные с конкретным пользователем"""
     # Удаляем кэш рубрик
     cache.delete(f"rubrics_user_{user_id}")
     # Удаляем кэш статистики дашборда
@@ -21,28 +21,27 @@ def invalidate_user_cache(user_id):
     # Удаляем кэш главной страницы (кэшируется через vary_on_cookie)
     cache.delete("views.decorators.cache.cache_page.index.")
     cache.delete("views.decorators.cache.cache_header.index.")
-    # Удаляем кэш страницы с пагинацией (если есть)
+    # Удаляем все кэши, содержащие rubrics или dashboard
     cache.delete_pattern("*rubrics*")
     cache.delete_pattern(f"*dashboard*user_{user_id}*")
 
 
 @receiver(post_save, sender=Document)
 def index_document(sender, instance, **kwargs):
-    """Автоматическая индексация при сохранении документа + очистка кэша"""
+    """Автоматическая индексация документа в Elasticsearch при сохранении"""
     try:
-        DocumentIndex().update(instance, refresh=False)
+        DocumentIndex().update(instance, refresh=False)  # refresh=False для производительности
         logger.info(f"Document {instance.id} indexed successfully")
-        invalidate_user_cache(instance.user.id)
+        invalidate_user_cache(instance.user.id)  # Очищаем кэш пользователя
     except Exception as e:
         logger.error(f"Error indexing document {instance.id}: {e}", exc_info=True)
 
 
 @receiver(post_delete, sender=Document)
 def delete_document(sender, instance, **kwargs):
-    """Автоматическое удаление из индекса при удалении документа"""
+    """Автоматическое удаление документа из индекса Elasticsearch"""
     try:
-        # Используем refresh=False для асинхронности, ignore=404 чтобы не падать
-        DocumentIndex().delete(instance)
+        DocumentIndex().delete(instance)  # ignore=404 обрабатывается внутри
         logger.info(f"Document {instance.id} deleted from index")
         invalidate_user_cache(instance.user.id)
     except Exception as e:
@@ -53,10 +52,11 @@ def delete_document(sender, instance, **kwargs):
 def clear_cache_on_public_change(sender, instance, **kwargs):
     """Очищает кэш при изменении статуса публичности документа"""
     try:
+        # Проверяем, изменился ли статус is_public
         if hasattr(instance, "_original_is_public"):
             if instance._original_is_public != instance.is_public:
                 invalidate_user_cache(instance.user.id)
     except AttributeError:
-        pass  # Это нормально, просто нет атрибута
+        pass  # Нет атрибута _original_is_public (например, при создании)
     except Exception as e:
         logger.warning(f"Error in clear_cache_on_public_change for doc {instance.id}: {e}")

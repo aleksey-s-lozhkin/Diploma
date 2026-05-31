@@ -10,6 +10,7 @@ from elasticsearch_dsl.connections import connections as es_connections
 
 
 def health_check(request):
+    """Проверка состояния всех сервисов (PostgreSQL, Elasticsearch)"""
     status = {"status": "ok", "checks": {}}
     http_status = 200
 
@@ -34,22 +35,23 @@ def health_check(request):
 
 
 urlpatterns = [
-    # Swagger документация
+    # API документация Swagger
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
-    # Администрирование
+    # Стандартные маршруты
     path("admin/", admin.site.urls),
     path("health/", health_check, name="health_check"),
-    # API (REST)
+    # REST API
     path("api/", include("documents.urls.urls_api")),
     path("api/", include("users.urls.urls_api")),
-    # Frontend (HTML/HTMX)
+    # Web интерфейс (HTMX)
     path("", include("documents.urls.urls_web")),
     path("", include("users.urls.urls_web")),
-    # Перенаправления
+    # Редирект для совместимости со стандартным URL входа
     path("accounts/login/", lambda request: redirect("/login/")),
 ]
 
+# Раздача статики и медиа в режиме DEBUG
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

@@ -51,6 +51,32 @@ class SearchResultsView(View):
     def post(self, request):
         user_id = request.user.id
 
+        # Обработка сброса фильтров
+        if request.POST.get("reset") == "true":
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "reset": True,
+                },
+            )
+
+        query = request.POST.get("query", "").strip()
+        rubric = request.POST.get("rubric", "")
+        privacy = request.POST.get("privacy", "all")
+        page = int(request.POST.get("page", 1))
+        sort_by = request.POST.get("sort", "relevance")
+
+        # Пустой запрос - показываем подсказку
+        if not query:
+            return render(
+                request,
+                "partials/search_results.html",
+                {
+                    "empty_query": True,
+                },
+            )
+
         limiter = RateLimiters.api_search()
         allowed, remaining, retry_after = limiter.check(f"user_{user_id}")
 
@@ -60,20 +86,12 @@ class SearchResultsView(View):
                 "partials/search_results.html",
                 {
                     "results": [],
-                    "query": request.POST.get("query", ""),
-                    "error": f"Слишком много запросов. Подождите {retry_after} секунд.",
+                    "query": query,
+                    "error": f"⏱️ Слишком много запросов. Подождите {retry_after} секунд.",
                 },
             )
 
         try:
-            query = request.POST.get("query", "").strip()
-            rubric = request.POST.get("rubric", "")
-            privacy = request.POST.get("privacy", "all")
-            page = int(request.POST.get("page", 1))
-
-            if not query:
-                return render(request, "partials/search_results.html", {"results": [], "query": ""})
-
             # Используем сервис поиска
             service = SearchService(request.user)
             search_response = service.search(
@@ -86,17 +104,49 @@ class SearchResultsView(View):
                 with_truncation=False,
             )
 
+            results_list = [r.to_dict() for r in search_response.results]
+
+            if sort_by == "date":
+                results_list.sort(key=lambda x: x.get("created_date", ""), reverse=True)
+            elif sort_by == "date_asc":
+                results_list.sort(key=lambda x: x.get("created_date", ""))
+
+            # Получаем page_range для пагинации
+            total_pages = search_response.total_pages
+            current_page = page
+
+            if total_pages <= 7:
+                page_range = list(range(1, total_pages + 1))
+            else:
+                if current_page <= 4:
+                    page_range = [1, 2, 3, 4, 5, "...", total_pages - 1, total_pages]
+                elif current_page >= total_pages - 3:
+                    page_range = [
+                        1,
+                        2,
+                        "...",
+                        total_pages - 4,
+                        total_pages - 3,
+                        total_pages - 2,
+                        total_pages - 1,
+                        total_pages,
+                    ]
+                else:
+                    page_range = [1, "...", current_page - 1, current_page, current_page + 1, "...", total_pages]
+
             return render(
                 request,
                 "partials/search_results.html",
                 {
-                    "results": [r.to_dict() for r in search_response.results],
+                    "results": results_list,
                     "query": query,
                     "page": page,
-                    "total_pages": search_response.total_pages,
+                    "total_pages": total_pages,
                     "total": search_response.total,
                     "rubric": rubric,
                     "privacy": privacy,
+                    "page_range": page_range,
+                    "sort": sort_by,
                 },
             )
         except ConnectionError as e:
@@ -106,7 +156,7 @@ class SearchResultsView(View):
                 "partials/search_results.html",
                 {
                     "results": [],
-                    "query": request.POST.get("query", ""),
+                    "query": query,
                     "error": "🔍 Поиск временно недоступен. Пожалуйста, попробуйте позже.",
                 },
             )
@@ -118,7 +168,7 @@ class SearchResultsView(View):
                 "partials/search_results.html",
                 {
                     "results": [],
-                    "query": request.POST.get("query", ""),
+                    "query": query,
                     "error": "⚙️ Ошибка конфигурации поиска. Администратор уже уведомлён.",
                 },
             )
@@ -130,7 +180,7 @@ class SearchResultsView(View):
                 "partials/search_results.html",
                 {
                     "results": [],
-                    "query": request.POST.get("query", ""),
+                    "query": query,
                     "error": "❌ Произошла внутренняя ошибка. Мы уже работаем над этим.",
                 },
             )

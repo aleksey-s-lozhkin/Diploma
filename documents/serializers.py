@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 
 from .models import Document, SearchHistory
@@ -7,7 +9,7 @@ MAX_TEXT_LENGTH = 100000
 
 
 class DocumentSerializer(serializers.ModelSerializer):
-    """Сериализатор для документа"""
+    """Сериализатор для документа (чтение)"""
 
     user_email = serializers.EmailField(source="user.email", read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
@@ -26,25 +28,24 @@ class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
         fields = ["rubrics", "text", "is_public"]
 
     def validate_text(self, value):
-        """Валидация текста без bleach"""
+        """Валидация текста: длина и удаление control characters"""
         if not value:
             return value
 
-        # Проверка длины
+        # Проверка максимальной длины
         if len(value) > MAX_TEXT_LENGTH:
             raise serializers.ValidationError(f"Текст слишком длинный. Максимум {MAX_TEXT_LENGTH} символов.")
 
-        # Базовая очистка: удаляем control characters
-        import re
-
-        # Удаляем нулевые символы и control characters (кроме \n, \r, \t)
+        # Базовая очистка: удаляем control characters (оставляем \n, \r, \t)
         value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)
 
         return value
 
     def validate_rubrics(self, value):
+        """Валидация рубрик: тип, количество и длина каждой рубрики"""
         if not isinstance(value, list):
             raise serializers.ValidationError("Рубрики должны быть списком")
+
         if len(value) > 10:
             raise serializers.ValidationError("Не более 10 рубрик")
 
@@ -59,7 +60,7 @@ class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 class SearchHistorySerializer(serializers.ModelSerializer):
-    """Сериализатор для истории поиска"""
+    """Сериализатор для истории поиска (только чтение)"""
 
     class Meta:
         model = SearchHistory

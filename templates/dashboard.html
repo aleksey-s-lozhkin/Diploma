@@ -5,15 +5,35 @@
 {% block content %}
 <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+<div class="container mt-4" id="dashboard-container">
+    <!-- Хлебные крошки -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/">🏠 Главная</a></li>
+            <li class="breadcrumb-item active">📄 Мои документы</li>
+        </ol>
+    </nav>
+
+    <!-- Заголовок и действия -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <h1>📄 Мои документы</h1>
-        <div>
-            <a href="?show_public=true" class="btn btn-outline-primary {% if show_public %}active{% endif %}">
-                🌍 Показать публичные
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="?show_public=true"
+               class="btn {% if show_public %}btn-primary{% else %}btn-outline-primary{% endif %}
+               {% if not show_public %}btn-outline-primary{% endif %}"
+               hx-get="{% url 'dashboard' %}?show_public=true"
+               hx-target="#dashboard-container"
+               hx-push-url="true"
+               hx-indicator="#spinner-global">
+                🌍 Публичные
             </a>
-            <a href="?show_public=false" class="btn btn-outline-secondary {% if not show_public %}active{% endif %}">
-                🔒 Только мои
+            <a href="?show_public=false"
+               class="btn {% if not show_public %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+               hx-get="{% url 'dashboard' %}?show_public=false"
+               hx-target="#dashboard-container"
+               hx-push-url="true"
+               hx-indicator="#spinner-global">
+                🔒 Мои
             </a>
             <a href="{% url 'document_create' %}" class="btn btn-success">
                 + Создать документ
@@ -21,56 +41,125 @@
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-body">
-                    <p class="text-muted">📊 Всего поисковых запросов: {{ total_searches }}</p>
+    <!-- Глобальный индикатор загрузки -->
+    <div id="spinner-global" class="htmx-indicator text-center py-3">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Загрузка...</span>
+        </div>
+        <p class="mt-2 text-muted small">Загрузка...</p>
+    </div>
+
+    <!-- Статистика -->
+    <div class="row mb-4 g-3">
+        <div class="col-md-4">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <div class="fs-1 mb-2">🔍</div>
+                    <h3 class="mb-0">{{ total_searches }}</h3>
+                    <small class="text-muted">поисковых запросов</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <div class="fs-1 mb-2">📄</div>
+                    <h3 class="mb-0">{{ documents.paginator.count }}</h3>
+                    <small class="text-muted">всего документов</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <div class="fs-1 mb-2">📋</div>
+                    <h3 class="mb-0">{{ documents|length }}</h3>
+                    <small class="text-muted">на этой странице</small>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Сообщения Django -->
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Список документов -->
     {% if documents %}
-    <div class="row mt-4">
+    <div class="row mt-4 g-3" id="documents-list">
         {% for doc in documents %}
-        <div class="col-md-6 mb-3">
+        <div class="col-md-6 col-lg-4" id="doc-card-{{ doc.id }}">
             <div class="card h-100 shadow-sm">
-                <div class="card-body">
+                <div class="card-body position-relative">
+                    <!-- Индикатор загрузки для карточки -->
+                    <div id="spinner-{{ doc.id }}" class="htmx-indicator card-spinner">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                    </div>
+
+                    <!-- Заголовок -->
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h5 class="card-title mb-0">
                             {% if doc.rubrics %}
-                            {% with first_rubric=doc.rubrics|first %}
-                            📁 {{ first_rubric }}
-                            {% if doc.rubrics|length > 1 %}
-                            <span class="badge bg-secondary">+{{ doc.rubrics|length|add:-1 }}</span>
-                            {% endif %}
-                            {% endwith %}
-                            {% elif doc.file %}
-                            📎 {{ doc.file_name|truncatechars:25 }}
+                                📁 {{ doc.rubrics|first|truncatechars:20 }}
                             {% else %}
-                            📄 Документ от {{ doc.created_date|date:"d.m.Y" }}
+                                📄 Документ #{{ doc.id }}
                             {% endif %}
                         </h5>
-                        <small class="text-muted">{{ doc.created_date|date:"d.m.Y H:i" }}</small>
+                        <small class="text-muted">{{ doc.created_date|date:"d.m.Y" }}</small>
                     </div>
+
+                    <!-- Рубрики и статус -->
                     <div class="mb-2">
-                        {% for rubric in doc.rubrics|slice:":3" %}
-                        <span class="badge bg-secondary">{{ rubric }}</span>
+                        {% for rubric in doc.rubrics|slice:":2" %}
+                        <span class="badge bg-secondary me-1">{{ rubric }}</span>
                         {% endfor %}
-                        {% if doc.rubrics|length > 3 %}
-                        <span class="badge bg-secondary">+{{ doc.rubrics|length|add:-3 }}</span>
+                        {% if doc.rubrics|length > 2 %}
+                        <span class="badge bg-secondary">+{{ doc.rubrics|length|add:-2 }}</span>
                         {% endif %}
+
                         {% if doc.is_public %}
                         <span class="badge bg-success">🌍 Публичный</span>
                         {% else %}
                         <span class="badge bg-secondary">🔒 Приватный</span>
                         {% endif %}
                     </div>
-                    <p class="card-text">{{ doc.text|striptags|truncatewords:30 }}</p>
-                    <div class="mt-3">
-                        <a href="{% url 'document_detail' doc.id %}" class="btn btn-sm btn-outline-primary">📄 Открыть</a>
-                        <button class="btn btn-sm btn-outline-danger delete-doc" data-id="{{ doc.id }}">🗑️ Удалить</button>
+
+                    <!-- Текст документа -->
+                    <p class="card-text text-muted small">
+                        {{ doc.text|striptags|truncatewords:20 }}
+                    </p>
+
+                    <!-- Кнопки действий -->
+                    <div class="mt-3 d-flex gap-2">
+                        <a href="{% url 'document_detail' doc.id %}" class="btn btn-sm btn-outline-primary">
+                            📄 Открыть
+                        </a>
+
+                        {% if not doc.is_public %}
+                        <form method="post" action="{% url 'toggle_public' doc.id %}" style="display: inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-success">
+                                🌍 Опубликовать
+                            </button>
+                        </form>
+                        {% endif %}
+
+                        <button class="btn btn-sm btn-outline-danger"
+                                hx-delete="{% url 'document_delete' doc.id %}"
+                                hx-target="#doc-card-{{ doc.id }}"
+                                hx-swap="outerHTML"
+                                hx-indicator="#spinner-{{ doc.id }}"
+                                hx-confirm="🗑️ Удалить документ? Отменить будет невозможно.">
+                            🗑️
+                        </button>
                     </div>
                 </div>
             </div>
@@ -80,60 +169,93 @@
 
     <!-- Пагинация -->
     {% if documents.has_other_pages %}
-    <nav class="mt-4">
+    <nav class="mt-5">
         <ul class="pagination justify-content-center">
             {% if documents.has_previous %}
             <li class="page-item">
-                <a class="page-link" href="?page={{ documents.previous_page_number }}{% if show_public %}&show_public=true{% endif %}">← Предыдущая</a>
+                <a class="page-link"
+                   href="?page={{ documents.previous_page_number }}{% if show_public %}&show_public=true{% endif %}"
+                   hx-get="{% url 'dashboard' %}?page={{ documents.previous_page_number }}{% if show_public %}&show_public=true{% endif %}"
+                   hx-target="#dashboard-container"
+                   hx-push-url="true"
+                   hx-indicator="#spinner-global">
+                    ← Предыдущая
+                </a>
             </li>
             {% else %}
             <li class="page-item disabled"><span class="page-link">← Предыдущая</span></li>
             {% endif %}
 
             {% for p in documents.paginator.page_range %}
-            {% if documents.number == p %}
-            <li class="page-item active"><span class="page-link">{{ p }}</span></li>
-            {% elif p > documents.number|add:'-3' and p < documents.number|add:'3' %}
-            <li class="page-item"><a class="page-link" href="?page={{ p }}{% if show_public %}&show_public=true{% endif %}">{{ p }}</a></li>
-            {% endif %}
+                {% if documents.number == p %}
+                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                {% elif p > documents.number|add:'-3' and p < documents.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link"
+                       href="?page={{ p }}{% if show_public %}&show_public=true{% endif %}"
+                       hx-get="{% url 'dashboard' %}?page={{ p }}{% if show_public %}&show_public=true{% endif %}"
+                       hx-target="#dashboard-container"
+                       hx-push-url="true"
+                       hx-indicator="#spinner-global">
+                        {{ p }}
+                    </a>
+                </li>
+                {% endif %}
             {% endfor %}
 
             {% if documents.has_next %}
             <li class="page-item">
-                <a class="page-link" href="?page={{ documents.next_page_number }}{% if show_public %}&show_public=true{% endif %}">Следующая →</a>
+                <a class="page-link"
+                   href="?page={{ documents.next_page_number }}{% if show_public %}&show_public=true{% endif %}"
+                   hx-get="{% url 'dashboard' %}?page={{ documents.next_page_number }}{% if show_public %}&show_public=true{% endif %}"
+                   hx-target="#dashboard-container"
+                   hx-push-url="true"
+                   hx-indicator="#spinner-global">
+                    Следующая →
+                </a>
             </li>
-            {% else %}
-            <li class="page-item disabled"><span class="page-link">Следующая →</span></li>
             {% endif %}
         </ul>
     </nav>
     {% endif %}
 
     {% else %}
-    <div class="alert alert-info mt-4">
-        У вас пока нет документов.
-        <a href="{% url 'document_create' %}" class="alert-link">Создать первый документ</a>
+    <!-- Пустое состояние -->
+    <div class="text-center py-5 mt-5">
+        <div class="display-1 mb-3">📭</div>
+        <h3 class="mb-3">У вас пока нет документов</h3>
+        <p class="text-muted mb-4">Создайте первый документ, чтобы начать работу</p>
+        <a href="{% url 'document_create' %}" class="btn btn-primary btn-lg">
+            + Создать документ
+        </a>
     </div>
     {% endif %}
 </div>
 
-<script>
-    function getCSRFToken() {
-        let csrf = document.querySelector('[name=csrfmiddlewaretoken]');
-        return csrf ? csrf.value : '';
+<style>
+    /* Стили только для HTMX индикаторов */
+    .htmx-indicator {
+        display: none;
     }
-
-    document.querySelectorAll('.delete-doc').forEach(btn => {
-        btn.addEventListener('click', function() {
-            if (confirm('Удалить документ?')) {
-                fetch('/documents/' + this.dataset.id + '/delete/', {
-                    method: 'DELETE',
-                    headers: {
-                        'X-CSRFToken': getCSRFToken()
-                    }
-                }).then(() => location.reload());
-            }
-        });
-    });
-</script>
+    .htmx-request .htmx-indicator {
+        display: block;
+    }
+    .card-spinner {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255,255,255,0.9);
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        z-index: 10;
+    }
+    .htmx-request .card-body > :not(.card-spinner) {
+        opacity: 0.5;
+        pointer-events: none;
+    }
+    .card-body {
+        position: relative;
+    }
+</style>
 {% endblock %}

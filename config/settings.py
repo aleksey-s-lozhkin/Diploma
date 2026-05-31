@@ -4,16 +4,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # Загружаем переменные окружения из .env файла
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Безопасность
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-default-key-for-dev")
-
 DEBUG = os.getenv("DEBUG", "True") == "True"
-
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
+# Кастомная модель пользователя и бэкенд аутентификации по email
 AUTH_USER_MODEL = "users.User"
 AUTHENTICATION_BACKENDS = [
     "users.backends.EmailAuthBackend",
@@ -49,7 +49,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "django_htmx.middleware.HtmxMiddleware",
+    "django_htmx.middleware.HtmxMiddleware",  # HTMX поддержка
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -72,6 +72,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+# База данных PostgreSQL
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -83,50 +84,39 @@ DATABASES = {
     }
 }
 
-# Elasticsearch DSL
+# Elasticsearch для полнотекстового поиска
 ELASTICSEARCH_DSL = {
     "default": {"hosts": f"http://{os.getenv('ELASTICSEARCH_HOST', 'localhost')}:9200"},
 }
 
-# Redis
+# Redis (кеширование и очереди)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# Локализация
 LANGUAGE_CODE = "ru-ru"
-
 TIME_ZONE = "Europe/Moscow"
-
 USE_I18N = True
-
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
+# Статические файлы
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 STATICFILES_DIRS = (
     [os.path.join(BASE_DIR, "static_src")] if os.path.exists(os.path.join(BASE_DIR, "static_src")) else []
 )
 
-# Media files
+# Медиафайлы (загруженные документы)
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Security headers (для production)
+# Настройки безопасности для продакшена
 if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -134,10 +124,9 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     X_FRAME_OPTIONS = "DENY"
 
-# Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# DRF Configuration
+# DRF (Django REST Framework)
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
@@ -146,6 +135,7 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 10,
 }
 
+# API документация Swagger/OpenAPI
 SPECTACULAR_SETTINGS = {
     "TITLE": "DocSearch API",
     "DESCRIPTION": "API для поиска по документам с аутентификацией",
@@ -153,7 +143,7 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
 }
 
-# JWT Settings
+# JWT настройки
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
@@ -170,19 +160,19 @@ SIMPLE_JWT = {
     "TOKEN_TYPE_CLAIM": "token_type",
 }
 
-# Health check endpoint
 HEALTH_CHECK_ENABLED = True
 
+# URL для аутентификации и редиректов
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
-# CSRF settings for HTMX
+# CSRF для HTMX запросов
 CSRF_TRUSTED_ORIGINS = ["http://localhost", "http://127.0.0.1"]
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
 
-# Cache configuration with Redis
+# Кеширование через Redis
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -203,15 +193,13 @@ CACHES = {
     }
 }
 
-# Rate limiting
+# Лимитирование запросов
 RATELIMIT_USE_CACHE = "default"
 RATELIMIT_CACHE_PREFIX = "rl:"
 RATELIMIT_ENABLE = True
 
-# Email settings
-# Для отладки (письма в консоль)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"  # Для продакшена закомментировать
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend' # Для продакшена раскомментировать
+# Email настройки (для верификации)
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"  # TODO: для продакшена заменить на SMTP
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.yandex.ru")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 465))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "False") == "True"
@@ -220,5 +208,6 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
+# Верификация email
 VERIFICATION_EMAIL_TITLE = "Подтверждение email"
 VERIFICATION_TOKEN_EXPIRATION_DAYS = 1
