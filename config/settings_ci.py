@@ -1,7 +1,10 @@
 from datetime import timedelta
 from pathlib import Path
 
+import django_elasticsearch_dsl.signals
 from elasticsearch_dsl import connections
+
+django_elasticsearch_dsl.signals.post_save.disconnect()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
