@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir poetry==1.7.1
 WORKDIR /app
 
 # Копируем только файлы с зависимостями
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml poetry.lock* ./
 
 # Устанавливаем зависимости (убираем --only main)
 RUN poetry config virtualenvs.create false \
