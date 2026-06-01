@@ -1,8 +1,9 @@
-from unittest.mock import MagicMock
+import os
 
-from elasticsearch_dsl import connections
+from .settings import INSTALLED_APPS  # noqa: F401
 
-from .settings import *  # noqa: F403, F401
+os.environ["ELASTICSEARCH_DSL_AUTO_REFRESH"] = "False"
+os.environ["ELASTICSEARCH_DSL_SIGNALS"] = "False"
 
 # Используем SQLite для CI тестов
 DATABASES = {
@@ -12,25 +13,21 @@ DATABASES = {
     }
 }
 
-# Отключаем кэширование для тестов
+# Отключаем кэширование
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
 
-# Полностью отключаем Elasticsearch через подмену соединения
-
-# Создаём мок для Elasticsearch клиента
-mock_es = MagicMock()
-mock_es.info.return_value = {"version": {"number": "8.0.0"}}
-mock_es.bulk.return_value = (True, [])
-
-# Подменяем реальный клиент на мок
-connections.add_connection("default", mock_es)
-
-# Отключаем авто-обновление
+# Отключаем Elasticsearch
+ELASTICSEARCH_DSL = {
+    "default": {"hosts": "http://localhost:9200"},
+}
 ELASTICSEARCH_DSL_AUTO_REFRESH = False
+
+# Удаляем django_elasticsearch_dsl из INSTALLED_APPS
+INSTALLED_APPS = [app for app in INSTALLED_APPS if app != "django_elasticsearch_dsl"]
 
 # Логи в консоль
 LOGGING = {
@@ -43,6 +40,6 @@ LOGGING = {
     },
     "root": {
         "handlers": ["console"],
-        "level": "ERROR",  # Уменьшаем шум в логах
+        "level": "ERROR",
     },
 }
