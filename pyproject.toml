@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Полнотекстовый поиск документов с Elasticsearch"
 authors = ["Aleksey Lozhkin <aleksey.s.lozhkin@gmail.com>"]
 readme = "README.md"
+package-mode = false
+
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
@@ -12,21 +14,16 @@ djangorestframework = ">=3.17.1,<4.0.0"
 djangorestframework-simplejwt = ">=5.5.1,<6.0.0"
 psycopg2-binary = ">=2.9.12,<3.0.0"
 django-elasticsearch-dsl = "7.4.0"
-drf-yasg = ">=1.21.15,<2.0.0"
 python-dotenv = ">=1.2.2,<2.0.0"
 gunicorn = ">=26.0.0,<27.0.0"
 django-htmx = ">=1.27.0,<2.0.0"
-requests = "^2.34.2"
 django-redis = "^6.0.0"
 python-docx = "^1.2.0"
 openpyxl = "^3.1.5"
 django-ratelimit = "^4.1.0"
-pdfplumber = "^0.11.9"
 pypdf = "^6.12.1"
 elasticsearch-dsl = ">=7.2.0,<8.0.0"
 django-verify-email = "^3.0.3"
-uuid = "^1.30"
-virtualenv = "20.39.1"
 drf-spectacular = "^0.29.0"
 
 [tool.poetry.group.dev.dependencies]
@@ -37,7 +34,6 @@ flake8 = "^6.1"
 black = "^23.11"
 isort = "^5.12"
 pre-commit = "^3.5"
-djangorestframework-stubs = "^3.17.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -55,13 +51,7 @@ exclude = [
     "venv",
     ".venv",
     "*/migrations/*",
-    "*/tests.py",
     "manage.py",
-    "env",
-    "tests/",
-    "*/tests.py",
-    "test_*.py",
-
 ]
 
 [tool.black]
@@ -73,6 +63,6 @@ profile = "black"
 line_length = 120
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings"
+DJANGO_SETTINGS_MODULE = "config.settings_ci"
 python_files = "test_*.py"
 addopts = "--cov=documents --cov-report=html --cov-report=term"
