@@ -92,23 +92,23 @@ services:
       - app_network
     restart: unless-stopped
 
-nginx:
-  image: nginx:1.25-alpine
-  container_name: docsearch_nginx
-  ports:
-    - "80:80"
-    - "443:443"
-  volumes:
-    - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-    - ./nginx/default-ssl.conf:/etc/nginx/conf.d/default-ssl.conf:ro
-    - ./static:/app/static:ro
-    - ./media:/app/media:ro
-    - ./ssl:/etc/nginx/ssl:ro
-  depends_on:
-    - web
-  networks:
-    - app_network
-  restart: unless-stopped
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: docsearch_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/default-ssl.conf:/etc/nginx/conf.d/default-ssl.conf:ro
+      - ./static:/app/static:ro
+      - ./media:/app/media:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - web
+    networks:
+      - app_network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
