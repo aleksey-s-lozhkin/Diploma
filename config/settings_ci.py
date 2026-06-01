@@ -1,4 +1,7 @@
+from datetime import timedelta
 from pathlib import Path
+
+from elasticsearch_dsl import connections
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -72,6 +75,9 @@ ELASTICSEARCH_DSL = {
 }
 ELASTICSEARCH_DSL_AUTO_REFRESH = False
 
+# Мокаем соединение с Elasticsearch
+connections.add_connection("default", None)
+
 # Отключаем кэширование
 CACHES = {
     "default": {
@@ -93,6 +99,29 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 10,
 }
 
+# JWT настройки
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
+
+# URL для аутентификации
+LOGIN_URL = "/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/login/"
+
+# CSRF
+CSRF_TRUSTED_ORIGINS = []
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = "Lax"
+
 # Логи в консоль
 LOGGING = {
     "version": 1,
@@ -108,5 +137,5 @@ LOGGING = {
     },
 }
 
-# Email для тестов (не отправляет)
+# Email для тестов
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
