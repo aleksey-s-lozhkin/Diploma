@@ -1,3 +1,5 @@
+import django_elasticsearch_dsl.signals
+
 from .settings import *  # noqa: F403, F401
 
 # Используем SQLite для CI тестов
@@ -8,10 +10,11 @@ DATABASES = {
     }
 }
 
-# Отключаем Elasticsearch для тестов (или используем мок)
+# Отключаем Elasticsearch для тестов
 ELASTICSEARCH_DSL = {
     "default": {"hosts": "http://localhost:9200"},
 }
+ELASTICSEARCH_DSL_AUTO_REFRESH = False
 
 # Отключаем кэширование для тестов
 CACHES = {
@@ -19,6 +22,10 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
+
+# Отключаем сигналы Elasticsearch
+django_elasticsearch_dsl.signals.post_save.disconnect()
+django_elasticsearch_dsl.signals.post_delete.disconnect()
 
 # Логи в консоль
 LOGGING = {
