@@ -1,7 +1,7 @@
 # Предварительная сборка
 FROM python:3.12-slim-bookworm AS builder
 
-# Установка Poetry (такая же версия, как локально)
+# Установка Poetry
 RUN pip install --no-cache-dir poetry==2.1.3
 
 WORKDIR /app
