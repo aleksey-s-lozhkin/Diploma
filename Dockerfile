@@ -1,15 +1,15 @@
 # Предварительная сборка
 FROM python:3.12-slim-bookworm AS builder
 
-# Установка Poetry
-RUN pip install --no-cache-dir poetry==1.7.1
+# Установка Poetry (такая же версия, как локально)
+RUN pip install --no-cache-dir poetry==2.1.3
 
 WORKDIR /app
 
 # Копируем только файлы с зависимостями
 COPY pyproject.toml poetry.lock* ./
 
-# Устанавливаем зависимости (убираем --only main)
+# Устанавливаем зависимости
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
