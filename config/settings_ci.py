@@ -3,7 +3,9 @@ import os
 from .settings import INSTALLED_APPS  # noqa: F401
 
 os.environ["ELASTICSEARCH_DSL_AUTO_REFRESH"] = "False"
-os.environ["ELASTICSEARCH_DSL_SIGNALS"] = "False"
+
+# Устанавливаем SECRET_KEY для CI
+SECRET_KEY = "django-insecure-ci-test-key-1234567890"
 
 # Используем SQLite для CI тестов
 DATABASES = {
