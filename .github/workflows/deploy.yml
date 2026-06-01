@@ -5,75 +5,82 @@ on:
     branches: [main, master]
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Flake8
+        run: pip install flake8
+      - name: Run Flake8
+        run: flake8 . --count --max-line-length=127 --statistics --exclude=migrations,.venv,venv,__pycache__
 
-      - name: Install dependencies
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
         run: |
-          python -m pip install --upgrade pip
           pip install poetry
-          poetry install --no-interaction --no-root
-
-      - name: Run tests
+          poetry config virtualenvs.create false
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+      - name: Run migrations and tests
         run: |
-          poetry run pytest
-        env:
-          DJANGO_SETTINGS_MODULE: config.settings
-          DEBUG: "True"
-          DB_HOST: localhost
-          ELASTICSEARCH_HOST: localhost
-          REDIS_URL: redis://localhost:6379/0
+          poetry run python manage.py migrate --settings=config.settings_ci
+          poetry run python manage.py test --noinput --settings=config.settings_ci
 
   deploy:
     runs-on: ubuntu-latest
     needs: test
-    if: success()
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/${{ secrets.DEPLOY_USER }}/app
 
-      - name: Deploy
-        run: |
-          ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
-          if [ ! -d ~/app/.git ]; then
-            git clone ${{ secrets.GIT_REPO_URL }} ~/app
-          else
-            cd ~/app && git pull origin main
-          fi
-          cd ~/app
-          cat > .env << 'ENVEOF'
-          DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
-          DEBUG=False
-          ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
-          CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
-          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          DB_HOST=db
-          ELASTICSEARCH_HOST=elasticsearch
-          REDIS_URL=redis://redis:6379/0
-          EMAIL_HOST=${{ secrets.EMAIL_HOST }}
-          EMAIL_PORT=${{ secrets.EMAIL_PORT }}
-          EMAIL_USE_SSL=${{ secrets.EMAIL_USE_SSL }}
-          EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
-          EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
-          DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
-          ENVEOF
-          docker compose down
-          docker compose up -d --build
-          EOF
+            # Создаем .env файл
+            cat > .env << 'EOF'
+            DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+            DEBUG=False
+            ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+            CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            DB_HOST=db
+            ELASTICSEARCH_HOST=elasticsearch
+            REDIS_URL=redis://redis:6379/0
+            EMAIL_HOST=${{ secrets.EMAIL_HOST }}
+            EMAIL_PORT=${{ secrets.EMAIL_PORT }}
+            EMAIL_USE_SSL=${{ secrets.EMAIL_USE_SSL }}
+            EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
+            EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
+            DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
+            EOF
+
+            docker compose down
+            docker compose up -d --build
+
+            sleep 20
+
+            # Миграции
+            docker compose exec -T web python manage.py migrate --noinput || true
+            docker compose exec -T web python manage.py collectstatic --noinput || true
