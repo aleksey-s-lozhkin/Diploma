@@ -1,10 +1,14 @@
+# Мокаем django_elasticsearch_dsl
+import sys
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import MagicMock
 
-import django_elasticsearch_dsl.signals
 from elasticsearch_dsl import connections
 
-django_elasticsearch_dsl.signals.post_save.disconnect()
+sys.modules["django_elasticsearch_dsl"] = MagicMock()
+sys.modules["django_elasticsearch_dsl.signals"] = MagicMock()
+sys.modules["django_elasticsearch_dsl.registries"] = MagicMock()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
