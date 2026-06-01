@@ -3,6 +3,7 @@ name: Deploy to Server
 on:
   push:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -45,6 +46,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "."
+          target: "/home/${{ secrets.DEPLOY_USER }}/app"
+          rm: true
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
