@@ -1,18 +1,13 @@
-version: '3.8'
-
 services:
-  # ---------- PostgreSQL ----------
   db:
     image: postgres:15-alpine
-    container_name: document_search_db
+    container_name: docsearch_db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-docsearch}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
@@ -20,19 +15,17 @@ services:
       retries: 5
     networks:
       - app_network
+    restart: unless-stopped
 
-  # ---------- Elasticsearch ----------
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: document_search_es
+    container_name: docsearch_es
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     volumes:
       - es_data:/usr/share/elasticsearch/data
-    ports:
-      - "9200:9200"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 30s
@@ -40,13 +33,11 @@ services:
       retries: 5
     networks:
       - app_network
+    restart: unless-stopped
 
-  # ---------- Redis (кэш / rate limiting) ----------
   redis:
     image: redis:7-alpine
-    container_name: document_search_redis
-    ports:
-      - "6379:6379"
+    container_name: docsearch_redis
     volumes:
       - redis_data:/data
     healthcheck:
@@ -56,28 +47,40 @@ services:
       retries: 5
     networks:
       - app_network
+    restart: unless-stopped
 
-  # ---------- Django + Gunicorn ----------
   web:
     build: .
-    container_name: document_search_web
+    container_name: docsearch_web
     command: >
       sh -c "
         python manage.py migrate &&
         python manage.py collectstatic --noinput &&
-        gunicorn app.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2 --access-logfile -
+        python manage.py search_index --rebuild -f &&
+        gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2 --access-logfile - --error-logfile -
       "
     volumes:
       - ./static:/app/static
       - ./media:/app/media
       - ./logs:/app/logs
     environment:
-      - DJANGO_SETTINGS_MODULE=app.settings
-      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-docsearch}
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DEBUG=${DEBUG:-False}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=db
       - ELASTICSEARCH_HOST=elasticsearch
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${DJANGO_SECRET_KEY}
-      - DEBUG=${DJANGO_DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USE_SSL=${EMAIL_USE_SSL}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
     depends_on:
       db:
         condition: service_healthy
@@ -85,34 +88,33 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    expose:
-      - "8000"
-    restart: unless-stopped
     networks:
       - app_network
-
-  # ---------- Nginx (reverse proxy + статика) ----------
-  nginx:
-    build: ./nginx
-    container_name: document_search_nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./static:/app/static:ro
-      - ./media:/app/media:ro
-    depends_on:
-      - web
     restart: unless-stopped
-    networks:
-      - app_network
 
-# ---------- Сети ----------
-networks:
-  app_network:
-    driver: bridge
+nginx:
+  image: nginx:1.25-alpine
+  container_name: docsearch_nginx
+  ports:
+    - "80:80"
+    - "443:443"
+  volumes:
+    - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    - ./nginx/default-ssl.conf:/etc/nginx/conf.d/default-ssl.conf:ro
+    - ./static:/app/static:ro
+    - ./media:/app/media:ro
+    - ./ssl:/etc/nginx/ssl:ro
+  depends_on:
+    - web
+  networks:
+    - app_network
+  restart: unless-stopped
 
-# ---------- Тома для данных ----------
 volumes:
   postgres_data:
   es_data:
   redis_data:
+
+networks:
+  app_network:
+    driver: bridge
