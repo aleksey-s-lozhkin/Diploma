@@ -1,23 +1,15 @@
-# Мокаем django_elasticsearch_dsl
-import sys
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from elasticsearch_dsl import connections
 
-sys.modules["django_elasticsearch_dsl"] = MagicMock()
-sys.modules["django_elasticsearch_dsl.signals"] = MagicMock()
-sys.modules["django_elasticsearch_dsl.registries"] = MagicMock()
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Безопасность
 SECRET_KEY = "django-insecure-ci-test-key-1234567890"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
-# Приложения
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -33,7 +25,6 @@ INSTALLED_APPS = [
     "documents",
 ]
 
-# Мидлварь
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -65,7 +56,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# База данных SQLite для тестов
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -73,32 +63,30 @@ DATABASES = {
     }
 }
 
-# Кастомная модель пользователя
 AUTH_USER_MODEL = "users.User"
 
-# Отключаем Elasticsearch
-ELASTICSEARCH_DSL = {
-    "default": {"hosts": "http://localhost:9200"},
-}
+# Отключаем Elasticsearch полностью
+ELASTICSEARCH_DSL = {"default": {"hosts": "http://localhost:9200"}}
 ELASTICSEARCH_DSL_AUTO_REFRESH = False
 
-# Мокаем соединение с Elasticsearch
-connections.add_connection("default", None)
+# Мокаем клиент Elasticsearch
 
-# Отключаем кэширование
+mock_es = MagicMock()
+mock_es.search.return_value = {"hits": {"total": {"value": 0}, "hits": []}}
+
+connections.add_connection("default", mock_es)
+
+# Отключаем кэш (чтобы не было delete_pattern)
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
 
-# Статика
 STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# DRF
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
@@ -106,7 +94,6 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 10,
 }
 
-# JWT настройки
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
@@ -119,30 +106,22 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
-# URL для аутентификации
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
-# CSRF
 CSRF_TRUSTED_ORIGINS = []
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
 
-# Логи в консоль
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-        },
-    },
-    "root": {
-        "handlers": ["console"],
-        "level": "ERROR",
-    },
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": "ERROR"},
 }
 
-# Email для тестов
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+RATELIMIT_ENABLE = True
+RATELIMIT_USE_CACHE = "default"
