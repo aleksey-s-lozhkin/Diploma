@@ -1,5 +1,3 @@
-import django_elasticsearch_dsl.signals
-
 from .settings import *  # noqa: F403, F401
 
 # Используем SQLite для CI тестов
@@ -22,10 +20,6 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
-
-# Отключаем сигналы Elasticsearch
-django_elasticsearch_dsl.signals.post_save.disconnect()
-django_elasticsearch_dsl.signals.post_delete.disconnect()
 
 # Логи в консоль
 LOGGING = {
