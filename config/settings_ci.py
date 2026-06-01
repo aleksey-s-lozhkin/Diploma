@@ -1,4 +1,4 @@
-from django_elasticsearch_dsl.signals import post_delete, post_save
+import django_elasticsearch_dsl.signals
 
 from .settings import *  # noqa: F403, F401
 
@@ -10,19 +10,22 @@ DATABASES = {
     }
 }
 
+# Отключаем Elasticsearch для тестов
 ELASTICSEARCH_DSL = {
     "default": {"hosts": "http://localhost:9200"},
 }
 ELASTICSEARCH_DSL_AUTO_REFRESH = False
 
+# Отключаем кэширование для тестов
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
 
-post_save.disconnect(dispatch_uid="elasticsearch_dsl.signals.handle_save")
-post_delete.disconnect(dispatch_uid="elasticsearch_dsl.signals.handle_delete")
+# Отключаем сигналы Elasticsearch
+django_elasticsearch_dsl.signals.post_save.disconnect()
+django_elasticsearch_dsl.signals.post_delete.disconnect()
 
 # Логи в консоль
 LOGGING = {
