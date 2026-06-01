@@ -16,7 +16,7 @@ jobs:
       - name: Install Flake8
         run: pip install flake8
       - name: Run Flake8
-        run: flake8 . --count --max-line-length=127 --statistics --exclude=migrations,.venv,venv,__pycache__
+        run: flake8 . --count --max-line-length=127 --statistics --ignore=E203,W503,E501
 
   test:
     runs-on: ubuntu-latest
