@@ -24,7 +24,8 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
-    mem_limit: 512m
+    mem_limit: 2g
+    mem_reservation: 1g
     volumes:
       - es_data:/usr/share/elasticsearch/data
     healthcheck:
