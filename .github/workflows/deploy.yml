@@ -53,21 +53,13 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Добавляем GitHub в known_hosts
-            mkdir -p /home/${{ secrets.DEPLOY_USER }}/.ssh
-            ssh-keyscan -H github.com >> /home/${{ secrets.DEPLOY_USER }}/.ssh/known_hosts
-
-            # Загружаем ключ в ssh-agent (используем тот же ключ)
-            eval $(ssh-agent -s)
-            ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY }}"
-
-            # Клонируем свежий код
-            rm -rf /home/${{ secrets.DEPLOY_USER }}/app
-            git clone ${{ secrets.GIT_REPO_URL }} /home/${{ secrets.DEPLOY_USER }}/app
+            # Очищаем и клонируем
+            sudo rm -rf /home/${{ secrets.DEPLOY_USER }}/app
+            git clone https://github.com/aleksey-s-lozhkin/Diploma.git /home/${{ secrets.DEPLOY_USER }}/app
 
             cd /home/${{ secrets.DEPLOY_USER }}/app
 
-            # Создаём .env из секретов
+            # Создаём .env
             cat > .env << 'EOF'
             DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
             DEBUG=False
@@ -87,15 +79,10 @@ jobs:
             DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
             EOF
 
-            # Останавливаем системный nginx
-            sudo systemctl stop nginx 2>/dev/null || true
-            sudo systemctl disable nginx 2>/dev/null || true
-
-            # Запускаем контейнеры
+            # Запускаем
             docker compose up -d --build
 
             sleep 10
 
-            # Миграции и статика
             docker compose exec -T web python manage.py migrate --noinput || true
             docker compose exec -T web python manage.py collectstatic --noinput || true
