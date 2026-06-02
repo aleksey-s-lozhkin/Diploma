@@ -53,11 +53,15 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Очищаем и клонируем
-            rm -rf /home/${{ secrets.DEPLOY_USER }}/app
-            git clone https://github.com/aleksey-s-lozhkin/Diploma.git /home/${{ secrets.DEPLOY_USER }}/app
+            # Очищаем и клонируем ветку main
+            sudo rm -rf /home/${{ secrets.DEPLOY_USER }}/app
+            git clone --branch main https://github.com/aleksey-s-lozhkin/Diploma.git /home/${{ secrets.DEPLOY_USER }}/app
 
             cd /home/${{ secrets.DEPLOY_USER }}/app
+
+            # Проверяем, что клонировалась правильная версия
+            echo "Latest commit:"
+            git log -1 --oneline
 
             # Создаём .env файл
             cat > .env << 'EOF'
