@@ -48,6 +48,8 @@ services:
   web:
     build: .
     container_name: docsearch_web
+    volumes:
+      - ./static:/app/static
     command: >
       sh -c "
         python manage.py migrate &&
