@@ -2,7 +2,7 @@ name: Deploy to Server
 
 on:
   push:
-    branches: [main, master]
+    branches: [develop]
   workflow_dispatch:
 
 jobs:
@@ -42,22 +42,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/develop'
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          port: ${{ secrets.SSH_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "."
-          target: "/home/${{ secrets.DEPLOY_USER }}/app"
-          rm: true
-
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -66,6 +53,13 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Клонируем или обновляем репозиторий (без создания ключа)
+            if [ ! -d "/home/${{ secrets.DEPLOY_USER }}/app/.git" ]; then
+              git clone ${{ secrets.GIT_REPO_URL }} /home/${{ secrets.DEPLOY_USER }}/app
+            else
+              cd /home/${{ secrets.DEPLOY_USER }}/app && git pull origin develop
+            fi
+
             cd /home/${{ secrets.DEPLOY_USER }}/app
 
             # Создаем .env файл
@@ -88,6 +82,11 @@ jobs:
             DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
             EOF
 
+            # Останавливаем системный nginx
+            sudo systemctl stop nginx || true
+            sudo systemctl disable nginx || true
+
+            # Запускаем контейнеры
             docker compose down
             docker compose up -d --build
 
