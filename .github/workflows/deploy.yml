@@ -53,7 +53,11 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Клонируем свежий код (всегда новый clone)
+            # Добавляем GitHub в known_hosts
+            mkdir -p /home/${{ secrets.DEPLOY_USER }}/.ssh
+            ssh-keyscan -H github.com >> /home/${{ secrets.DEPLOY_USER }}/.ssh/known_hosts
+
+            # Клонируем свежий код
             rm -rf /home/${{ secrets.DEPLOY_USER }}/app
             git clone ${{ secrets.GIT_REPO_URL }} /home/${{ secrets.DEPLOY_USER }}/app
 
