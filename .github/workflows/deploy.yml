@@ -54,12 +54,12 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # Очищаем и клонируем
-            sudo rm -rf /home/${{ secrets.DEPLOY_USER }}/app
+            rm -rf /home/${{ secrets.DEPLOY_USER }}/app
             git clone https://github.com/aleksey-s-lozhkin/Diploma.git /home/${{ secrets.DEPLOY_USER }}/app
 
             cd /home/${{ secrets.DEPLOY_USER }}/app
 
-            # Создаём .env
+            # Создаём .env файл
             cat > .env << 'EOF'
             DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
             DEBUG=False
@@ -79,7 +79,7 @@ jobs:
             DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
             EOF
 
-            # Запускаем
+            # Запускаем контейнеры
             docker compose up -d --build
 
             sleep 10
