@@ -57,6 +57,10 @@ jobs:
             mkdir -p /home/${{ secrets.DEPLOY_USER }}/.ssh
             ssh-keyscan -H github.com >> /home/${{ secrets.DEPLOY_USER }}/.ssh/known_hosts
 
+            # Загружаем ключ в ssh-agent (используем тот же ключ)
+            eval $(ssh-agent -s)
+            ssh-add - <<< "${{ secrets.SSH_PRIVATE_KEY }}"
+
             # Клонируем свежий код
             rm -rf /home/${{ secrets.DEPLOY_USER }}/app
             git clone ${{ secrets.GIT_REPO_URL }} /home/${{ secrets.DEPLOY_USER }}/app
