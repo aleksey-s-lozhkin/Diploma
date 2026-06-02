@@ -1,46 +1,27 @@
-# Предварительная сборка
-FROM python:3.12-slim-bookworm AS builder
-
-# Установка Poetry
-RUN pip install --no-cache-dir poetry==2.1.3
-
-WORKDIR /app
-
-# Копируем только файлы с зависимостями
-COPY pyproject.toml poetry.lock* ./
-
-# Устанавливаем зависимости
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-root
-
-# Финальная сборка
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim
 
 # Установка системных зависимостей
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev \
+RUN apt-get update && apt-get install -y \
     gcc \
+    postgresql-client \
+    libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Установка Poetry
+RUN pip install poetry==1.8.3
+RUN poetry config virtualenvs.create false
+
 WORKDIR /app
 
-# Копируем зависимости из builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Копирование зависимостей
+COPY pyproject.toml poetry.lock* ./
+RUN poetry install --no-interaction --no-ansi --no-root --without dev,lint
 
-# Копируем код проекта
+# Копирование всего проекта
 COPY . .
 
-# Создаем директории
-RUN mkdir -p /app/static /app/media /app/logs
-
-# Создаем пользователя
-RUN useradd --create-home --shell /bin/bash appuser && \
-    chown -R appuser:appuser /app
-
-USER appuser
-
+# Открытие порта
 EXPOSE 8000
 
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--threads", "2"]
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
