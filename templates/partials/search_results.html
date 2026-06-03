@@ -82,8 +82,10 @@
                 </div>
 
                 <div class="card-text">
-                    {% if doc.highlight %}
-                        {{ doc.highlight|safe }}
+                    {% if doc.highlights %}
+                        {% for fragment in doc.highlights %}
+                            <p>{{ fragment|safe }}</p>
+                        {% endfor %}
                     {% else %}
                         {{ doc.text|striptags|truncatewords:50 }}
                     {% endif %}
