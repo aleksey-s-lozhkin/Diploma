@@ -53,17 +53,16 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Очищаем и клонируем ветку main
+            # Очищаем и клонируем
             sudo rm -rf /home/${{ secrets.DEPLOY_USER }}/app
             git clone --branch main https://github.com/aleksey-s-lozhkin/Diploma.git /home/${{ secrets.DEPLOY_USER }}/app
 
             cd /home/${{ secrets.DEPLOY_USER }}/app
 
-            # Проверяем, что клонировалась правильная версия
             echo "Latest commit:"
             git log -1 --oneline
 
-            # Создаём .env файл
+            # Создаём .env
             cat > .env << 'EOF'
             DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
             DEBUG=False
@@ -88,5 +87,9 @@ jobs:
 
             sleep 10
 
+            # Миграции и статика
             docker compose exec -T web python manage.py migrate --noinput || true
-            docker compose exec -T web python manage.py collectstatic --noinput || true
+            docker compose exec -T web python manage.py collectstatic --noinput --clear || true
+
+            # Перезапускаем nginx для подхвата статики
+            docker compose restart nginx
