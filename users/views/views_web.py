@@ -91,12 +91,16 @@ class RegisterView(View):
                 messages.error(
                     request, f"Слишком много попыток для этого email. Попробуйте через {retry_after} секунд."
                 )
+                if request.htmx:
+                    return render(request, "users/register_form.html", {"form": form})
                 return render(request, "users/register.html", {"form": form})
 
             # Проверка существующего пользователя
             if User.objects.filter(email=email).exists():
                 logger.warning(f"Registration attempt with existing email: {email}")
                 messages.error(request, "Пользователь с таким email уже существует")
+                if request.htmx:
+                    return render(request, "users/register_form.html", {"form": form})
                 return render(request, "users/register.html", {"form": form})
 
             try:
@@ -119,8 +123,13 @@ class RegisterView(View):
             except Exception as e:
                 logger.error(f"Registration failed for {email}: {str(e)}")
                 messages.error(request, "Произошла ошибка при регистрации. Попробуйте позже.")
+                if request.htmx:
+                    return render(request, "users/register_form.html", {"form": form})
                 return render(request, "users/register.html", {"form": form})
 
+        # Если форма не валидна
+        if request.htmx:
+            return render(request, "users/register_form.html", {"form": form})
         return render(request, "users/register.html", {"form": form})
 
 
