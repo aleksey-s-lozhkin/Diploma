@@ -1,35 +1,41 @@
-<form id="register-form"
-      hx-post="{% url 'register' %}"
-      hx-target="#register-result"
-      hx-swap="innerHTML">
-    {% csrf_token %}
-    <div class="mb-3">
-        <label for="email" class="form-label">Email</label>
-        <input type="email" name="email" id="email" class="form-control" value="{{ form.email.value|default:'' }}" required autofocus>
-        {% if form.email.errors %}
-            <div class="text-danger small">{{ form.email.errors.0 }}</div>
-        {% endif %}
-    </div>
-    <div class="mb-3">
-        <label for="first_name" class="form-label">Имя</label>
-        <input type="text" name="first_name" id="first_name" class="form-control" value="{{ form.first_name.value|default:'' }}">
-    </div>
-    <div class="mb-3">
-        <label for="last_name" class="form-label">Фамилия</label>
-        <input type="text" name="last_name" id="last_name" class="form-control" value="{{ form.last_name.value|default:'' }}">
-    </div>
-    <div class="mb-3">
-        <label for="password1" class="form-label">Пароль</label>
-        <input type="password" name="password1" id="password1" class="form-control" required>
-        <div class="form-text text-muted small">Пароль должен содержать не менее 8 символов</div>
-    </div>
-    <div class="mb-3">
-        <label for="password2" class="form-label">Подтверждение пароля</label>
-        <input type="password" name="password2" id="password2" class="form-control" required>
-    </div>
-    <button type="submit" class="btn btn-success w-100">
-        <span class="spinner-border spinner-border-sm htmx-indicator" role="status"></span>
-        Зарегистрироваться
-    </button>
-</form>
-<div id="register-result"></div>
+<div id="register-card-body">
+    <form id="register-form"
+          hx-post="{% url 'register' %}"
+          hx-target="#register-card-body"
+          hx-swap="outerHTML">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" name="email" id="email" class="form-control" value="{{ form.email.value|default:'' }}" required autofocus>
+            {% if form.email.errors %}
+                <div class="text-danger small">{{ form.email.errors.0 }}</div>
+            {% endif %}
+        </div>
+        <div class="mb-3">
+            <label for="first_name" class="form-label">Имя</label>
+            <input type="text" name="first_name" id="first_name" class="form-control" value="{{ form.first_name.value|default:'' }}">
+        </div>
+        <div class="mb-3">
+            <label for="last_name" class="form-label">Фамилия</label>
+            <input type="text" name="last_name" id="last_name" class="form-control" value="{{ form.last_name.value|default:'' }}">
+        </div>
+        <div class="mb-3">
+            <label for="password1" class="form-label">Пароль</label>
+            <input type="password" name="password1" id="password1" class="form-control" required>
+            <div class="form-text text-muted small">Пароль должен содержать не менее 8 символов</div>
+        </div>
+        <div class="mb-3">
+            <label for="password2" class="form-label">Подтверждение пароля</label>
+            <input type="password" name="password2" id="password2" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-success w-100">
+            <span class="spinner-border spinner-border-sm htmx-indicator" role="status"></span>
+            Зарегистрироваться
+        </button>
+    </form>
+    <hr>
+    <p class="text-center mb-0">
+        Уже есть аккаунт?
+        <a href="#" hx-get="{% url 'login' %}" hx-target="body" hx-swap="innerHTML" hx-push-url="true">Войти</a>
+    </p>
+</div>
