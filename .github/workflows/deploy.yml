@@ -90,3 +90,5 @@ jobs:
 
             docker compose exec -T web python manage.py migrate --noinput || true
             docker compose exec -T web python manage.py collectstatic --noinput || true
+
+            docker compose restart nginx
