@@ -11,11 +11,6 @@
             </div>
             <div class="card-body">
                 {% include 'users/register_form.html' %}
-                <hr>
-                <p class="text-center mb-0">
-                    Уже есть аккаунт?
-                    <a href="#" hx-get="{% url 'login' %}" hx-target="body" hx-swap="innerHTML" hx-push-url="true">Войти</a>
-                </p>
             </div>
         </div>
     </div>
