@@ -8,8 +8,35 @@ from openpyxl import load_workbook
 logger = logging.getLogger(__name__)
 
 
+def clean_extracted_text(text):
+    """Очищает извлечённый текст для улучшения поиска"""
+    if not text:
+        return ""
+
+    # 1. Заменяем NUL символы на пробелы (важно для склеивания слов)
+    text = text.replace("\x00", " ")
+
+    # 2. Объединяем разорванные слова (было: "ра зрыв" → "разрыв")
+    text = re.sub(r"(\w)\s+(\w)", r"\1\2", text)
+
+    # 3. Убираем лишние пробелы (более одного подряд)
+    text = re.sub(r"[ \t]+", " ", text)
+
+    # 4. Убираем пробелы вокруг пунктуации
+    text = re.sub(r"\s+([.,!?;:])", r"\1", text)
+
+    # 5. Нормализуем переносы строк (3+ переносов → 2)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # 6. Убираем пробелы в начале/конце строк
+    lines = [line.strip() for line in text.split("\n")]
+    text = "\n".join(lines)
+
+    return text.strip()
+
+
 def extract_text_from_file(file_path, file_type):
-    """Извлекает текст из файла в зависимости от его типа.  PDF, DOCX, XLSX, TXT"""
+    """Извлекает текст из файла в зависимости от его типа. PDF, DOCX, XLSX, TXT"""
     text = ""
 
     try:
@@ -21,9 +48,6 @@ def extract_text_from_file(file_path, file_type):
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n"
-
-            # Минимальная очистка: убираем множественные переносы строк
-            text = re.sub(r"\n{3,}", "\n\n", text)
 
         elif file_type == "docx":
             # Извлечение текста из DOCX
@@ -53,5 +77,8 @@ def extract_text_from_file(file_path, file_type):
     except Exception as e:
         logger.error(f"Error extracting text from {file_path}: {e}", exc_info=True)
         return ""
+
+    # Применяем очистку текста
+    text = clean_extracted_text(text)
 
     return text
