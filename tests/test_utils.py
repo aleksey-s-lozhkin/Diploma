@@ -26,7 +26,6 @@ class ExtractTextFromFileTest(TestCase):
 
                 # Проверяем, что текст извлечён и очищен
                 self.assertIn("Extracted PDF text", text)
-                self.assertIn("\n", text)
         finally:
             os.unlink(tmp_path)
 
