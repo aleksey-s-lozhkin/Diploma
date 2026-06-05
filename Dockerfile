@@ -12,10 +12,6 @@ RUN apt-get update && apt-get install -y \
 RUN pip install poetry==1.8.3
 RUN poetry config virtualenvs.create false
 
-# Установка spacy и русской модели
-RUN pip install spacy && \
-    python -m spacy download ru_core_news_sm
-
 WORKDIR /app
 
 # Копирование зависимостей
