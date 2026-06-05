@@ -1,6 +1,5 @@
 import logging
 import re
-import unicodedata
 
 import pypdf
 from docx import Document as DocxDocument
@@ -14,30 +13,25 @@ def clean_extracted_text(text):
     if not text:
         return ""
 
-    # Заменяем NUL символы на пробелы (важно для склеивания слов)
+    # Заменяем NUL символы на пробелы
     text = text.replace("\x00", " ")
 
-    # Объединяем разорванные слова (было: "ра зрыв" → "разрыв")
-    text = re.sub(r"(\w)\s+(\w)", r"\1\2", text)
+    # Исправляем разорванные слова
+    text = re.sub(r"(\w+)-\n(\w+)", r"\1\2", text)
+    text = re.sub(r"(\w+)\s+-\s+(\w+)", r"\1\2", text)
 
-    # Убираем лишние пробелы (более одного подряд)
-    text = re.sub(r"[ \t]+", " ", text)
+    # Убираем лишние пробелы
+    text = re.sub(r"[ \t]{2,}", " ", text)
 
-    # Убираем пробелы вокруг пунктуации
-    text = re.sub(r"\s+([.,!?;:])", r"\1", text)
+    # Восстанавливаем точки в конце предложений
+    text = re.sub(r"([a-zа-я])\n+([A-ZА-Я])", r"\1. \2", text)
 
-    # Нормализуем переносы строк (3+ переносов → 2)
+    # Нормализуем переносы строк
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     # Убираем пробелы в начале/конце строк
     lines = [line.strip() for line in text.split("\n")]
     text = "\n".join(lines)
-
-    # Нормализуем Unicode символы
-    text = unicodedata.normalize("NFKD", text)
-
-    # Удаляем непечатные символы
-    text = "".join(c for c in text if c.isprintable() or c in "\n\r\t")
 
     return text.strip()
 
