@@ -249,6 +249,8 @@ class PasswordResetConfirmView(View):
             new_password = form.cleaned_data["new_password1"]
             user.set_password(new_password)
             user.clear_reset_token()
+            user.is_active = True
+            user.is_email_verified = True
             user.save()
 
             messages.success(request, "Пароль успешно изменён! Теперь вы можете войти.")
