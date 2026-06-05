@@ -1,39 +1,12 @@
 import logging
-import re
 
 import pypdf
 from docx import Document as DocxDocument
 from openpyxl import load_workbook
 
+from documents.text_processor import clean_extracted_text
+
 logger = logging.getLogger(__name__)
-
-
-def clean_extracted_text(text):
-    """Очищает извлечённый текст для улучшения поиска"""
-    if not text:
-        return ""
-
-    # Заменяем NUL символы на пробелы
-    text = text.replace("\x00", " ")
-
-    # Исправляем разорванные слова
-    text = re.sub(r"(\w+)-\n(\w+)", r"\1\2", text)
-    text = re.sub(r"(\w+)\s+-\s+(\w+)", r"\1\2", text)
-
-    # Убираем лишние пробелы
-    text = re.sub(r"[ \t]{2,}", " ", text)
-
-    # Восстанавливаем точки в конце предложений
-    text = re.sub(r"([a-zа-я])\n+([A-ZА-Я])", r"\1. \2", text)
-
-    # Нормализуем переносы строк
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    # Убираем пробелы в начале/конце строк
-    lines = [line.strip() for line in text.split("\n")]
-    text = "\n".join(lines)
-
-    return text.strip()
 
 
 def extract_text_from_file(file_path, file_type):
