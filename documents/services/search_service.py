@@ -66,23 +66,21 @@ class SearchService:
         self.user = user
 
     def build_query(self, query: str, rubric: Optional[str] = None, privacy: str = "all") -> Search:
-        """
-        Построение Elasticsearch запроса с фильтрацией.
+        """Построение Elasticsearch запроса с фильтрацией"""
 
-        Аргументы:
-            query: Поисковый запрос
-            rubric: Фильтр по рубрике (опционально)
-            privacy: Фильтр приватности ('all', 'public', 'private')
-
-        Возвращает:
-            Search объект Elasticsearch DSL
-        """
-        # Базовый поиск по тексту с учётом прав доступа
+        # Базовый поиск с нечёткостью (fuzziness)
         s = Search(index=self.INDEX_NAME).query(
-            "bool",
-            must=[{"match": {"text": query}}],
-            should=[{"term": {"user_id": self.user.id}}, {"term": {"is_public": True}}],
-            minimum_should_match=1,  # Должно совпадать хотя бы одно условие
+            "multi_match",
+            query=query,
+            fields=["text", "rubrics"],
+            fuzziness="AUTO",
+            operator="or",
+            minimum_should_match="70%",
+        )
+
+        # Фильтр по правам доступа (публичные или свои)
+        s = s.query(
+            "bool", should=[{"term": {"user_id": self.user.id}}, {"term": {"is_public": True}}], minimum_should_match=1
         )
 
         # Фильтр по рубрике
@@ -94,7 +92,6 @@ class SearchService:
             s = s.query("term", is_public=True)
         elif privacy == "private":
             s = s.query("term", user_id=self.user.id)
-        # privacy == "all" — без дополнительных фильтров
 
         return s
 

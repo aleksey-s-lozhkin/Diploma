@@ -25,7 +25,6 @@ pypdf = "^6.12.1"
 elasticsearch-dsl = ">=7.2.0,<8.0.0"
 django-verify-email = "^3.0.3"
 drf-spectacular = "^0.29.0"
-spacy = "^3.8.14"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4"
