@@ -1,0 +1,59 @@
+# Coverage Report
+
+![Coverage](https://img.shields.io/badge/coverage-89%25-brightgreen)
+```text
+Name                                        Stmts   Miss  Cover   Missing
+-------------------------------------------------------------------------
+config/__init__.py                              0      0   100%
+config/settings.py                             71     14    80%   121-125, 217-225
+config/urls.py                                 30     18    40%   14-34, 56-57
+documents/__init__.py                           0      0   100%
+documents/admin.py                             44     15    66%   22-24, 30-35, 41-43, 47, 63, 67
+documents/apps.py                               7      0   100%
+documents/documents.py                         33      1    97%   65
+documents/management/__init__.py                0      0   100%
+documents/management/commands/__init__.py       0      0   100%
+documents/migrations/0001_initial.py            7      0   100%
+documents/migrations/__init__.py                0      0   100%
+documents/models.py                            30      1    97%   36
+documents/rate_limit.py                        71      9    87%   22, 59-61, 81-82, 98-100
+documents/serializers.py                       38      1    97%   33
+documents/services/__init__.py                  0      0   100%
+documents/services/search_service.py           79      9    89%   48, 109-116, 169
+documents/signals.py                           41      8    80%   36-37, 45-46, 59-62
+documents/urls/__init__.py                      3      0   100%
+documents/urls/urls_api.py                      8      0   100%
+documents/urls/urls_web.py                      5      0   100%
+documents/utils.py                             47     10    79%   47-53, 57-59
+documents/views/__init__.py                     3      0   100%
+documents/views/views_api.py                  129     12    91%   59-60, 142-145, 157, 174, 198, 238-240, 251, 270
+documents/views/views_web.py                  197     61    69%   40-45, 52-178, 240-241, 310-312, 328-330, 403-409
+manage.py                                      11      2    82%   13-14
+tests/__init__.py                               0      0   100%
+tests/test_api.py                             320      0   100%
+tests/test_forms.py                            53      0   100%
+tests/test_models.py                           73      0   100%
+tests/test_rate_limit.py                       51      0   100%
+tests/test_serializers.py                      83      0   100%
+tests/test_services.py                         26      0   100%
+tests/test_utils.py                            99      0   100%
+tests/test_web.py                             288      0   100%
+users/__init__.py                               1      0   100%
+users/admin.py                                 15      0   100%
+users/apps.py                                   5      0   100%
+users/backends.py                              12      0   100%
+users/email_utils.py                           18      0   100%
+users/forms.py                                 78     12    85%   17-21, 24-28, 102, 122
+users/migrations/0001_initial.py                6      0   100%
+users/migrations/__init__.py                    0      0   100%
+users/models.py                                64      2    97%   14, 92
+users/serializers.py                           29      2    93%   29, 34
+users/urls/__init__.py                          3      0   100%
+users/urls/urls_api.py                          3      0   100%
+users/urls/urls_web.py                          3      0   100%
+users/views/__init__.py                         3      0   100%
+users/views/views_api.py                       98      6    94%   71, 150, 195-197, 227
+users/views/views_web.py                      219     90    59%   23, 29, 37-38, 50, 53, 58, 65, 70, 76, 90-96, 100-104, 123-128, 132, 138-141, 158-163, 167-169, 179-182, 190-192, 197, 200-202, 207-226, 230-232, 237-245, 259, 262-264, 270-271, 282-283, 293, 296
+-------------------------------------------------------------------------
+TOTAL                                        2404    273    89%
+```
