@@ -1,24 +1,34 @@
 {
   "info": {
-    "name": "Document Search API",
+    "name": "DocSearch API",
     "description": "API для полнотекстового поиска документов",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "Auth",
+      "name": "👤 Users",
       "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/user/register/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepass123\",\n  \"password2\": \"securepass123\",\n  \"first_name\": \"Иван\",\n  \"last_name\": \"Иванов\"\n}"
+            }
+          }
+        },
         {
           "name": "Login",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/api/auth/login/",
-            "header": [
-              {"key": "Content-Type", "value": "application/json"}
-            ],
+            "url": "{{base_url}}/api/user/login/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"yourpassword\"\n}"
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepass123\"\n}"
             }
           }
         },
@@ -26,10 +36,8 @@
           "name": "Refresh Token",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/api/auth/refresh/",
-            "header": [
-              {"key": "Content-Type", "value": "application/json"}
-            ],
+            "url": "{{base_url}}/api/user/refresh/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}"
@@ -40,10 +48,8 @@
           "name": "Verify Token",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/api/auth/verify/",
-            "header": [
-              {"key": "Content-Type", "value": "application/json"}
-            ],
+            "url": "{{base_url}}/api/user/verify/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
@@ -51,91 +57,66 @@
           }
         },
         {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "url": "{{base_url}}/api/auth/logout/",
-            "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
-          }
-        },
-        {
-          "name": "Profile",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/api/auth/profile/",
-            "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Users",
-      "item": [
-        {
-          "name": "Register",
-          "request": {
-            "method": "POST",
-            "url": "{{base_url}}/api/register/",
-            "header": [
-              {"key": "Content-Type", "value": "application/json"}
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"password\": \"securepass123\",\n  \"confirm_password\": \"securepass123\"\n}"
-            }
-          }
-        },
-        {
           "name": "Get Profile",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/api/profile/",
-            "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
+            "url": "{{base_url}}/api/user/profile/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }]
           }
         },
         {
-          "name": "Logout (api)",
+          "name": "Logout",
           "request": {
             "method": "POST",
-            "url": "{{base_url}}/api/logout/",
-            "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
+            "url": "{{base_url}}/api/user/logout/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}"
+            }
           }
         }
       ]
     },
     {
-      "name": "Documents",
+      "name": "📄 Documents",
       "item": [
         {
           "name": "List Documents",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/api/documents/?page=1",
-            "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
+            "url": "{{base_url}}/api/documents/?page=1&page_size=10",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }]
           }
         },
         {
-          "name": "Create Document",
+          "name": "Create Document (JSON)",
           "request": {
             "method": "POST",
             "url": "{{base_url}}/api/documents/",
             "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"},
-              {"key": "Content-Type", "value": "application/json"}
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rubrics\": [\"Git\", \"Version Control\"],\n  \"text\": \"Git is a distributed version control system...\",\n  \"is_public\": true\n}"
+              "raw": "{\n  \"rubrics\": [\"технологии\", \"python\", \"django\"],\n  \"text\": \"Django — это высокоуровневый веб-фреймворк для Python. Он способствует быстрой разработке и чистому, прагматичному дизайну.\",\n  \"is_public\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Document (File Upload)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/documents/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "rubrics", "value": "технологии, python", "type": "text" },
+                { "key": "is_public", "value": "true", "type": "text" },
+                { "key": "file", "type": "file", "src": "/path/to/your/document.pdf" }
+              ]
             }
           }
         },
@@ -143,24 +124,22 @@
           "name": "Get Document",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/api/documents/1/",
-            "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
+            "url": "{{base_url}}/api/documents/{{document_id}}/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }]
           }
         },
         {
           "name": "Update Document",
           "request": {
             "method": "PUT",
-            "url": "{{base_url}}/api/documents/1/",
+            "url": "{{base_url}}/api/documents/{{document_id}}/",
             "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"},
-              {"key": "Content-Type", "value": "application/json"}
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rubrics\": [\"Git\", \"SCM\"],\n  \"text\": \"Updated content...\",\n  \"is_public\": false\n}"
+              "raw": "{\n  \"rubrics\": [\"обновлено\", \"новое\"],\n  \"text\": \"Обновлённый текст документа\",\n  \"is_public\": false\n}"
             }
           }
         },
@@ -168,14 +147,14 @@
           "name": "Partial Update Document",
           "request": {
             "method": "PATCH",
-            "url": "{{base_url}}/api/documents/1/",
+            "url": "{{base_url}}/api/documents/{{document_id}}/",
             "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"},
-              {"key": "Content-Type", "value": "application/json"}
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"is_public\": false\n}"
+              "raw": "{\n  \"is_public\": true\n}"
             }
           }
         },
@@ -183,45 +162,83 @@
           "name": "Delete Document",
           "request": {
             "method": "DELETE",
-            "url": "{{base_url}}/api/documents/1/",
-            "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
+            "url": "{{base_url}}/api/documents/{{document_id}}/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }]
           }
         }
       ]
     },
     {
-      "name": "Search",
+      "name": "🔍 Search",
       "item": [
         {
           "name": "Search Documents",
           "request": {
-            "method": "GET",
-            "url": "{{base_url}}/api/search/?q=git",
+            "method": "POST",
+            "url": "{{base_url}}/api/search/",
             "header": [
-              {"key": "Authorization", "value": "Bearer {{access_token}}"}
-            ]
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"python разработка\",\n  \"rubric\": \"технологии\",\n  \"privacy\": \"all\",\n  \"page\": 1,\n  \"sort\": \"relevance\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Rubrics",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/rubrics/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }]
+          }
+        },
+        {
+          "name": "Delete Search History Item",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/search/history/{{history_id}}/",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏥 Monitoring",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health/",
+            "header": []
+          }
+        },
+        {
+          "name": "API Schema (OpenAPI)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/schema/",
+            "header": []
+          }
+        },
+        {
+          "name": "Swagger UI",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/docs/",
+            "header": []
           }
         }
       ]
     }
   ],
   "variable": [
-    {
-      "key": "base_url",
-      "value": "http://localhost",
-      "type": "string"
-    },
-    {
-      "key": "access_token",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "refresh_token",
-      "value": "",
-      "type": "string"
-    }
+    { "key": "base_url", "value": "http://localhost", "type": "string" },
+    { "key": "access_token", "value": "", "type": "string" },
+    { "key": "refresh_token", "value": "", "type": "string" },
+    { "key": "document_id", "value": "1", "type": "string" },
+    { "key": "history_id", "value": "1", "type": "string" }
   ]
 }
