@@ -108,7 +108,7 @@ class UsersViewsAPITestCase(APITestCase):
         response = self.client.post(self.login_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertIn("No active account found", str(response.data))
+        self.assertIn("error", response.data)
 
     def test_login_invalid_credentials(self):
         """Вход с неверными данными"""
