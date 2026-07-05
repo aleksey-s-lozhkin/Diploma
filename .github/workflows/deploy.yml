@@ -2,21 +2,104 @@ name: Deploy to Server
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 env:
-  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
-  DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+  DOCKER_REGISTRY: docker.io
+  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/diploma
   TAG: ${{ github.sha }}
 
 jobs:
-  build-and-push:
+  # ========== ЛИНТЕР ==========
+  lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Flake8
+        run: pip install flake8
+      - name: Run Flake8
+        run: flake8 . --count --max-line-length=127 --statistics --ignore=E203,W503,E501
+
+  # ========== ТЕСТЫ ==========
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      elasticsearch:
+        image: elasticsearch:8.11.0
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -f http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: |
+          pip install poetry
+          poetry config virtualenvs.create false
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+      - name: Run migrations and tests
+        run: |
+          poetry run python manage.py migrate --settings=config.settings_ci
+          poetry run python manage.py test --noinput --settings=config.settings_ci
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          DB_HOST: localhost
+          DB_PORT: 5432
+          REDIS_URL: redis://localhost:6379/0
+          ELASTICSEARCH_HOST: localhost
+          DEBUG: True
+
+  # ========== БИЛД И ПУШ ОБРАЗА ==========
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -36,9 +119,11 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/diploma:latest
             ${{ secrets.DOCKER_USERNAME }}/diploma:${{ github.sha }}
 
+  # ========== ДЕПЛОЙ ==========
   deploy:
-    needs: build-and-push
     runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
 
     steps:
       - name: Setup SSH
@@ -48,34 +133,59 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Deploy
+      - name: Deploy via SSH
         run: |
-          ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
-            cd ~/app
-            git pull origin main
+          ssh -o StrictHostKeyChecking=no -p ${{ secrets.SSH_PORT }} -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            echo "Deployment started..."
 
-            cat > .env << EOL
-            DEBUG=False
-            DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
-            ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
-            CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
-            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-            DB_HOST=${{ secrets.DB_HOST }}
-            REDIS_URL=${{ secrets.REDIS_URL }}
-            EMAIL_HOST=${{ secrets.EMAIL_HOST }}
-            EMAIL_PORT=${{ secrets.EMAIL_PORT }}
-            EMAIL_USE_SSL=${{ secrets.EMAIL_USE_SSL }}
-            EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
-            EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
-            DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
-            EOL
+            # Скачиваем новый образ
+            echo "Pulling latest image..."
+            docker pull ${{ secrets.DOCKER_USERNAME }}/diploma:latest
 
-            export TAG=${{ env.TAG }}
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d web
-            docker image prune -f
+            # Останавливаем старый контейнер
+            echo "Stopping old container..."
+            docker stop diploma-web || true
+            docker rm diploma-web || true
 
+            # Запускаем новый контейнер
+            echo "Starting new container..."
+            docker run -d \
+              --name diploma-web \
+              -p 8001:8001 \
+              --restart unless-stopped \
+              -e DEBUG=False \
+              -e DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }} \
+              -e ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }} \
+              -e CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }} \
+              -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
+              -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+              -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+              -e DB_HOST=${{ secrets.DB_HOST }} \
+              -e ELASTICSEARCH_HOST=${{ secrets.ELASTICSEARCH_HOST }} \
+              -e REDIS_URL=${{ secrets.REDIS_URL }} \
+              -e EMAIL_HOST=${{ secrets.EMAIL_HOST }} \
+              -e EMAIL_PORT=${{ secrets.EMAIL_PORT }} \
+              -e EMAIL_USE_SSL=${{ secrets.EMAIL_USE_SSL }} \
+              -e EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }} \
+              -e EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }} \
+              -e DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }} \
+              ${{ secrets.DOCKER_USERNAME }}/diploma:latest
+
+            # Ждем запуска
+            sleep 5
+
+            # Применяем миграции
+            echo "Running migrations..."
+            docker exec diploma-web python manage.py migrate --noinput || true
+
+            # Собираем статику
+            echo "Collecting static files..."
+            docker exec diploma-web python manage.py collectstatic --noinput --clear || true
+
+            # Перезапускаем Nginx
+            echo "Restarting nginx..."
             cd ~/docker-nginx
-            docker compose restart nginx
+            docker compose restart nginx || true
+
+            echo "Deployment complete!"
+          EOF
