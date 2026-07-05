@@ -1,8 +1,122 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOCKER_REGISTRY: docker.io
+  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/diploma
+  TAG: ${{ github.sha }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Flake8
+        run: pip install flake8
+      - name: Run Flake8
+        run: flake8 . --count --max-line-length=127 --statistics --ignore=E203,W503,E501
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      elasticsearch:
+        image: elasticsearch:8.11.0
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -f http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: |
+          pip install poetry
+          poetry config virtualenvs.create false
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+      - name: Run migrations and tests
+        run: |
+          poetry run python manage.py migrate --settings=config.settings_ci
+          poetry run python manage.py test --noinput --settings=config.settings_ci
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          DB_HOST: localhost
+          DB_PORT: 5432
+          REDIS_URL: redis://localhost:6379/0
+          ELASTICSEARCH_HOST: localhost
+          DEBUG: True
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/diploma:latest
+            ${{ secrets.DOCKER_USERNAME }}/diploma:${{ github.sha }}
+
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
     if: github.ref == 'refs/heads/main'
-
     steps:
       - name: Setup SSH
         run: |
@@ -18,7 +132,6 @@
 
             cd ~/docker-nginx
 
-            # Создаем .env файл
             cat > .env << EOL
             DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
             ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
@@ -37,16 +150,13 @@
             DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
             EOL
 
-            # Скачиваем новый образ
             echo "Pulling latest image..."
             docker pull ${{ secrets.DOCKER_USERNAME }}/diploma:latest
 
-            # Останавливаем старый контейнер
             echo "Stopping old container..."
             docker stop diploma-web || true
             docker rm diploma-web || true
 
-            # Запускаем новый контейнер с .env файлом
             echo "Starting new container..."
             docker run -d \
               --name diploma-web \
@@ -54,27 +164,19 @@
               --restart unless-stopped \
               --network docker-nginx_web-network \
               --env-file .env \
-              -e DB_HOST=postgres \
-              -e ELASTICSEARCH_HOST=elasticsearch \
-              -e REDIS_URL=redis://redis:6379/0 \
               ${{ secrets.DOCKER_USERNAME }}/diploma:latest
 
-            # Ждем запуска
             sleep 5
 
-            # Применяем миграции
             echo "Running migrations..."
             docker exec diploma-web python manage.py migrate --noinput || true
 
-            # Собираем статику
             echo "Collecting static files..."
             docker exec diploma-web python manage.py collectstatic --noinput --clear || true
 
-            # Копируем статику для Nginx
             echo "Copying static files for Nginx..."
             docker cp diploma-web:/app/static/. ./static/ || true
 
-            # Перезапускаем Nginx
             echo "Restarting nginx..."
             docker compose restart nginx
 
