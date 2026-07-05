@@ -151,7 +151,7 @@ jobs:
             echo "Starting new container..."
             docker run -d \
               --name diploma-web \
-              -p 8001:8001 \
+              -p 8000:8000 \
               --restart unless-stopped \
               -e DEBUG=False \
               -e DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }} \
