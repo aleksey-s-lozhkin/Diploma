@@ -1,6 +1,6 @@
 services:
   web:
-    image: ${DOCKER_REGISTRY}/${DOCKER_IMAGE:-docsearch}:${TAG:-latest}
+    image: ${{ secrets.DOCKER_USERNAME }}/diploma:latest
     container_name: docsearch_web
     ports:
       - "8001:8000"
