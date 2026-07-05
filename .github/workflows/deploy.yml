@@ -160,9 +160,9 @@ jobs:
               -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
               -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
               -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
-              -e DB_HOST=${{ secrets.DB_HOST }} \
-              -e ELASTICSEARCH_HOST=${{ secrets.ELASTICSEARCH_HOST }} \
-              -e REDIS_URL=${{ secrets.REDIS_URL }} \
+              -e DB_HOST=postgres \
+              -e ELASTICSEARCH_HOST=elasticsearch \
+              -e REDIS_URL=redis://redis:6379/0 \
               -e EMAIL_HOST=${{ secrets.EMAIL_HOST }} \
               -e EMAIL_PORT=${{ secrets.EMAIL_PORT }} \
               -e EMAIL_USE_SSL=${{ secrets.EMAIL_USE_SSL }} \
