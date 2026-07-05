@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Полнотекстовый поиск документов с Elasticsearch"
 authors = ["Aleksey Lozhkin <aleksey.s.lozhkin@gmail.com>"]
 readme = "README.md"
-package-mode = false
+# package-mode = false
 
 
 [tool.poetry.dependencies]

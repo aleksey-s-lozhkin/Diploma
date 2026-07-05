@@ -2,7 +2,7 @@
 FROM python:3.12-slim-bookworm AS builder
 
 # Установка Poetry
-RUN pip install --no-cache-dir poetry==1.7.1
+RUN pip install --no-cache-dir poetry
 
 WORKDIR /app
 
