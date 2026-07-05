@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.postgres",
     # Third party
+    "corsheaders",  # CORS поддержка
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",  # CORS middleware - должен быть как можно выше
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -167,8 +169,74 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 
-# CSRF для HTMX запросов
-CSRF_TRUSTED_ORIGINS = ["http://localhost", "http://127.0.0.1"]
+# Настройки безопасности для продакшена (дополнительные)
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 год
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# =====================
+# CORS НАСТРОЙКИ
+# =====================
+
+# Разрешенные источники (домены/URL)
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+
+# В продакшене разрешаем только реальные домены
+if not DEBUG:
+    CORS_ALLOWED_ORIGINS = [
+        "https://pyconstrictor.ru",
+        "https://www.pyconstrictor.ru",
+    ]
+
+# Разрешить отправку credentials (cookies, токены)
+CORS_ALLOW_CREDENTIALS = True
+
+# Разрешенные HTTP методы
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+# Разрешенные заголовки
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+# Время кеширования preflight запросов (в секундах)
+CORS_PREFLIGHT_MAX_AGE = 86400  # 24 часа
+
+# =====================
+# CSRF НАСТРОЙКИ
+# =====================
+
+# Доверенные источники для CSRF
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost",
+    "http://127.0.0.1",
+    "https://pyconstrictor.ru",
+    "https://www.pyconstrictor.ru",
+]
+
+# CSRF настройки для HTMX
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
 
@@ -211,18 +279,6 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 # Верификация email
 VERIFICATION_EMAIL_TITLE = "Подтверждение email"
 VERIFICATION_TOKEN_EXPIRATION_DAYS = 1
-
-# Безопасность для продакшена
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 год
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Настройка логов
 LOGGING = {
