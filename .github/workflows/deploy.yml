@@ -109,6 +109,7 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/amd64
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/diploma:latest
             ${{ secrets.DOCKER_USERNAME }}/diploma:${{ github.sha }}
@@ -127,58 +128,41 @@ jobs:
 
       - name: Deploy via SSH
         run: |
-          ssh -o StrictHostKeyChecking=no -p ${{ secrets.SSH_PORT }} -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no \
+          -p ${{ secrets.SSH_PORT }} \
+          -i ~/.ssh/deploy_key \
+          ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+
             echo "Deployment started..."
 
-            cd ~/docker-nginx
-
-            cat > .env << EOL
-            DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
-            ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
-            CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
-            POSTGRES_DB=docsearch
-            POSTGRES_USER=nextcloud
-            POSTGRES_PASSWORD=1qaz!QAZ
-            DB_HOST=postgres
-            ELASTICSEARCH_HOST=elasticsearch
-            REDIS_URL=redis://redis:6379/0
-            EMAIL_HOST=${{ secrets.EMAIL_HOST }}
-            EMAIL_PORT=${{ secrets.EMAIL_PORT }}
-            EMAIL_USE_SSL=${{ secrets.EMAIL_USE_SSL }}
-            EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
-            EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
-            DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
-            EOL
+            cd /srv/compose/diploma
 
             echo "Pulling latest image..."
-            docker pull ${{ secrets.DOCKER_USERNAME }}/diploma:latest
 
-            echo "Stopping old container..."
-            docker stop diploma-web || true
-            docker rm diploma-web || true
+            docker compose pull ${{ secrets.DOCKER_USERNAME }}/diploma:latest
 
-            echo "Starting new container..."
-            docker run -d \
-              --name diploma-web \
-              -p 8000:8000 \
-              --restart unless-stopped \
-              --network docker-nginx_web-network \
-              --env-file .env \
-              ${{ secrets.DOCKER_USERNAME }}/diploma:latest
+            echo "Starting container..."
+
+            docker compose up -d
 
             sleep 5
 
             echo "Running migrations..."
+
             docker exec diploma-web python manage.py migrate --noinput || true
 
             echo "Collecting static files..."
+
             docker exec diploma-web python manage.py collectstatic --noinput --clear || true
 
             echo "Copying static files for Nginx..."
-            docker cp diploma-web:/app/static/. ./static/ || true
+
+            docker cp diploma-web:/app/static/. /srv/compose/nginx/static/ || true
 
             echo "Restarting nginx..."
-            docker compose restart nginx
+
+            docker restart nginx
 
             echo "Deployment complete!"
+
           EOF
