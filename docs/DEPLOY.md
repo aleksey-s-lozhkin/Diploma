@@ -29,6 +29,8 @@ docsearch.pyconstrictor.ru → nginx → diploma-web:8000
 | `/srv/compose/diploma/.env` | только образ и путь к окружению, без секретов |
 | `/srv/config/env/diploma.env` | окружение и секреты приложения, права `600` |
 | `/srv/config/nginx/conf.d/docsearch.pyconstrictor.ru.conf` | vhost в общем nginx |
+| `/srv/config/nginx/conf.d/pyconstrictor.ru-redirect.conf` | `pyconstrictor.ru` и `www` — редирект на Самогон |
+| `/srv/config/nginx/conf.d/00-default-server.conf` | сервер по умолчанию: обрыв запросов по IP и на неизвестные имена |
 | `/srv/data/diploma/static` | собранная статика, её отдаёт nginx |
 | `/srv/data/diploma/media` | загруженные документы |
 | `/srv/data/letsencrypt` | сертификаты (общий для всех проектов, владелец root) |
@@ -216,6 +218,11 @@ docker exec diploma-web python manage.py search_index --rebuild -f
 
 Пуш в `main` запускает `publish-deploy.yml`: проверки → сборка образа с тегами
 `latest` и `<sha>` → деплой именно `<sha>` по SSH.
+
+`main` — ветка релизов (git flow): изменения приходят туда мержем из `develop`
+(или из `hotfix/*`), и каждый такой мерж разворачивается. Обычные правки идут в
+`develop` и на прод не попадают. Хотфикс, влитый в `main`, нужно затем влить и в
+`develop`, иначе следующая правка вернёт исправленное место.
 
 Секреты репозитория (не окружения) — те же имена, что уже заведены в этом
 репозитории, поэтому добавлять ничего не нужно:
