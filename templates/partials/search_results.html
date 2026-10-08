@@ -84,6 +84,8 @@
                 <div class="card-text">
                     {% if doc.highlights %}
                         {% for fragment in doc.highlights %}
+                            {# Разметка подсветки уже экранирована в SearchService.sanitize_highlight: #}
+                            {# сырым остаётся только наш <mark>, поэтому |safe здесь безопасен. #}
                             <p>{{ fragment|safe }}</p>
                         {% endfor %}
                     {% else %}

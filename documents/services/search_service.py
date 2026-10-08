@@ -3,11 +3,30 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from django.contrib.auth import get_user_model
+from django.utils.html import escape
 from elasticsearch_dsl import Search
 
 from documents.models import SearchHistory
 
 User = get_user_model()
+
+# Теги подсветки задаются нами, а не Elasticsearch по умолчанию: по ним
+# восстанавливается разметка после экранирования текста документа.
+HIGHLIGHT_PRE_TAG = "<mark>"
+HIGHLIGHT_POST_TAG = "</mark>"
+
+
+def sanitize_highlight(fragment: str) -> str:
+    """Экранирует фрагмент подсветки, оставляя только собственные теги.
+
+    Фрагмент собирается Elasticsearch из текста документа, то есть его пишет
+    пользователь. Шаблон выводит подсветку готовой разметкой, поэтому документ
+    со <script> выполнялся бы в браузере того, кто его найдёт поиском.
+    """
+    escaped = escape(fragment)
+    return escaped.replace(escape(HIGHLIGHT_PRE_TAG), HIGHLIGHT_PRE_TAG).replace(
+        escape(HIGHLIGHT_POST_TAG), HIGHLIGHT_POST_TAG
+    )
 
 
 @dataclass
@@ -109,10 +128,11 @@ class SearchService:
         highlights = []
         if hasattr(hit.meta, "highlight") and "text" in hit.meta.highlight:
             for fragment in hit.meta.highlight.text:
-                # Нормализуем пробелы и обрезаем
+                # Нормализуем пробелы, обрезаем и экранируем всё, кроме тегов
+                # подсветки: см. sanitize_highlight.
                 cleaned = re.sub(r"\s+", " ", fragment).strip()
                 if cleaned:
-                    highlights.append(cleaned)
+                    highlights.append(sanitize_highlight(cleaned))
         return highlights
 
     @staticmethod
@@ -176,8 +196,11 @@ class SearchService:
 
         s = s[start : start + page_size]
 
-        # Добавляем highlighting для подсветки совпадений
+        # Добавляем highlighting для подсветки совпадений. Теги подсветки свои и
+        # задаются на уровне всего запроса: по ним sanitize_highlight
+        # восстанавливает разметку в экранированном тексте документа.
         if with_highlights:
+            s = s.highlight_options(pre_tags=[HIGHLIGHT_PRE_TAG], post_tags=[HIGHLIGHT_POST_TAG])
             s = s.highlight("text", fragment_size=200, number_of_fragments=3)
 
         response = s.execute()
