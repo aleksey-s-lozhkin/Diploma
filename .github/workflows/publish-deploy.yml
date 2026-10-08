@@ -234,7 +234,7 @@ jobs:
             fi
 
             echo "Возвращаю предыдущий образ."
-            compose_for_image "$rollback_image" up -d --no-build
+            compose_for_image "$rollback_image" up -d --no-build --remove-orphans
             rollback_ready=0
             for attempt in $(seq 1 90); do
               if [ "$(docker inspect --format '{{.State.Health.Status}}' \
@@ -265,7 +265,11 @@ jobs:
           # api зависит от migrate с условием service_completed_successfully,
           # поэтому схема применяется до старта приложения: неудачная миграция не
           # оставит работающий сервис на неготовой базе.
-          compose_for_image "$image" up -d --no-build
+          #
+          # --remove-orphans нужен при переходе с прежнего compose, где сервис
+          # назывался diploma, а не web: контейнер с тем же именем, но другими
+          # метками, иначе останется висеть и займёт имя.
+          compose_for_image "$image" up -d --no-build --remove-orphans
 
           # Ждём именно healthy, а не запущенный контейнер: healthcheck
           # проверяет /health/ready/, то есть и PostgreSQL. Запущенный, но
