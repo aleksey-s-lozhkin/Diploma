@@ -118,8 +118,11 @@ jobs:
       - name: Войти в Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          # Имена секретов — те, что уже заведены в репозитории (DOCKERHUB_*
+          # здесь никогда не было): благодаря этому деплой работает без ручной
+          # настройки.
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
 
       # Публикуются два тега: latest — то, что поднимает ручной запуск, и SHA —
       # то, что разворачивает деплой и на что потом откатываются.
@@ -139,37 +142,43 @@ jobs:
     needs: publish
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
       # Ключ и known_hosts приходят из секретов, а не из состояния раннера:
-      # раннер одноразовый.
+      # раннер одноразовый. Парольная фраза необязательна: в репозитории такого
+      # секрета нет, ключ без неё.
       - name: Разблокировать ключ деплоя
         shell: bash
         env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          SSH_PASSPHRASE: ${{ secrets.DEPLOY_SSH_KEY_PASSPHRASE }}
-          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.SSH_KEY_PASSPHRASE }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
-          cat > "$RUNNER_TEMP/ssh-askpass" <<'EOF'
+          eval "$(ssh-agent -s)"
+          if [ -n "${SSH_PASSPHRASE:-}" ]; then
+            # Ключ с парольной фразой: ssh-add забирает её через askpass.
+            cat > "$RUNNER_TEMP/ssh-askpass" <<'EOF'
           #!/bin/sh
           printf '%s\n' "$SSH_PASSPHRASE"
           EOF
-          chmod 700 "$RUNNER_TEMP/ssh-askpass"
-          eval "$(ssh-agent -s)"
-          DISPLAY=1 SSH_ASKPASS="$RUNNER_TEMP/ssh-askpass" \
-            SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/id_ed25519 < /dev/null
+            chmod 700 "$RUNNER_TEMP/ssh-askpass"
+            DISPLAY=1 SSH_ASKPASS="$RUNNER_TEMP/ssh-askpass" \
+              SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/id_ed25519 < /dev/null
+          else
+            # Ключ без парольной фразы — как в секретах этого репозитория.
+            ssh-add ~/.ssh/id_ed25519 < /dev/null
+          fi
           echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
 
       - name: Загрузить образ и перезапустить приложение
         shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PORT: ${{ secrets.SSH_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
         run: |

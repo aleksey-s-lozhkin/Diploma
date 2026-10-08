@@ -217,16 +217,22 @@ docker exec diploma-web python manage.py search_index --rebuild -f
 Пуш в `main` запускает `publish-deploy.yml`: проверки → сборка образа с тегами
 `latest` и `<sha>` → деплой именно `<sha>` по SSH.
 
-Секреты репозитория (environment `production`):
+Секреты репозитория (не окружения) — те же имена, что уже заведены в этом
+репозитории, поэтому добавлять ничего не нужно:
 
 | Секрет | Что внутри |
 |---|---|
-| `DOCKERHUB_USERNAME` | логин Docker Hub |
-| `DOCKERHUB_TOKEN` | access token Docker Hub, не пароль |
-| `DEPLOY_SSH_PRIVATE_KEY` | приватный ключ деплоя |
-| `DEPLOY_SSH_KEY_PASSPHRASE` | парольная фраза ключа; пустая строка, если её нет |
-| `DEPLOY_SSH_KNOWN_HOSTS` | вывод `ssh-keyscan -p <порт> <хост>` |
-| `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER` | адрес, порт и пользователь SSH |
+| `DOCKER_USERNAME` | логин Docker Hub |
+| `DOCKER_TOKEN` | access token Docker Hub, не пароль |
+| `SSH_PRIVATE_KEY` | приватный ключ деплоя |
+| `SSH_KNOWN_HOSTS` | вывод `ssh-keyscan -p <порт> <хост>` |
+| `SSH_PORT` | порт SSH |
+| `DEPLOY_HOST`, `DEPLOY_USER` | адрес и пользователь SSH |
+| `SSH_KEY_PASSPHRASE` | необязательный: парольная фраза ключа, если он с ней |
+
+`environment: production` в workflow не используется намеренно: секреты лежат на
+уровне репозитория, а окружение без правил защиты ничего не добавляет, только
+плодит второй список секретов.
 
 Что делает деплой на сервере:
 
