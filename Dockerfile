@@ -28,9 +28,10 @@ FROM python:3.12-slim-bookworm AS runtime
 
 # uid и gid 1000 совпадают с владельцем /srv/data/diploma на сервере. Это
 # позволяет контейнеру писать медиа и статику в bind-mount, не работая от root
-# и не требуя chown на хосте.
+# и не требуя chown на хосте. Домашний каталог создаётся: gunicorn держит в нём
+# управляющий сокет и без каталога пишет в лог «Permission denied: /home/diploma».
 RUN groupadd --gid 1000 diploma \
-    && useradd --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin diploma
+    && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin diploma
 
 WORKDIR /app
 
