@@ -1,496 +1,892 @@
 {
-  "openapi": "3.0.3",
-  "info": {
-    "title": "DocSearch API",
-    "description": "API для полнотекстового поиска по документам с JWT-аутентификацией",
-    "version": "1.0.0",
-    "contact": {
-      "name": "Aleksey Lozhkin",
-      "email": "aleksey.s.lozhkin@gmail.com"
-    }
-  },
-  "servers": [
-    {
-      "url": "http://localhost",
-      "description": "Локальный сервер разработки"
+    "openapi": "3.0.3",
+    "info": {
+        "title": "DocSearch API",
+        "version": "1.0.0",
+        "description": "API для поиска по документам с аутентификацией"
     },
-    {
-      "url": "https://your-domain.com",
-      "description": "Production сервер"
-    }
-  ],
-  "tags": [
-    { "name": "auth", "description": "Аутентификация и JWT токены" },
-    { "name": "users", "description": "Управление пользователями" },
-    { "name": "documents", "description": "CRUD операции с документами" },
-    { "name": "search", "description": "Поиск и история" }
-  ],
-  "paths": {
-    "/api/user/register/": {
-      "post": {
-        "operationId": "user_register",
-        "summary": "Регистрация пользователя",
-        "description": "Создаёт нового пользователя и отправляет письмо с подтверждением email",
-        "tags": ["users"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["email", "password", "password2"],
-                "properties": {
-                  "email": { "type": "string", "format": "email", "example": "user@example.com" },
-                  "password": { "type": "string", "format": "password", "minLength": 8 },
-                  "password2": { "type": "string", "format": "password" },
-                  "first_name": { "type": "string", "maxLength": 30 },
-                  "last_name": { "type": "string", "maxLength": 30 }
+    "paths": {
+        "/api/documents/": {
+            "get": {
+                "operationId": "documents_list",
+                "description": "Получить список всех документов пользователя",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedDocumentList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
                 }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Пользователь создан",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "user": { "$ref": "#/components/schemas/User" },
-                    "access": { "type": "string" },
-                    "refresh": { "type": "string" },
-                    "message": { "type": "string" }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Ошибка валидации" },
-          "429": { "description": "Слишком много попыток (3 в час)" }
-        }
-      }
-    },
-    "/api/user/login/": {
-      "post": {
-        "operationId": "user_login",
-        "summary": "Вход пользователя",
-        "description": "Аутентификация по email и паролю. Возвращает JWT токены.",
-        "tags": ["auth"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["email", "password"],
-                "properties": {
-                  "email": { "type": "string", "format": "email" },
-                  "password": { "type": "string", "format": "password" }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Успешный вход",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "access": { "type": "string" },
-                    "refresh": { "type": "string" }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "description": "Неверные учётные данные или email не подтверждён" },
-          "429": { "description": "Слишком много попыток (10 за 5 минут)" }
-        }
-      }
-    },
-    "/api/user/logout/": {
-      "post": {
-        "operationId": "user_logout",
-        "summary": "Выход из системы",
-        "description": "Добавляет refresh токен в черный список",
-        "tags": ["auth"],
-        "security": [{ "jwtAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["refresh"],
-                "properties": { "refresh": { "type": "string" } }
-              }
-            }
-          }
-        },
-        "responses": {
-          "205": { "description": "Успешный выход" },
-          "400": { "description": "Невалидный токен" }
-        }
-      }
-    },
-    "/api/user/refresh/": {
-      "post": {
-        "operationId": "token_refresh",
-        "summary": "Обновление access токена",
-        "tags": ["auth"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["refresh"],
-                "properties": { "refresh": { "type": "string" } }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Новый access токен",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": { "access": { "type": "string" } }
-                }
-              }
-            }
-          },
-          "401": { "description": "Невалидный refresh токен" }
-        }
-      }
-    },
-    "/api/user/verify/": {
-      "post": {
-        "operationId": "token_verify",
-        "summary": "Проверка токена",
-        "tags": ["auth"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["token"],
-                "properties": { "token": { "type": "string" } }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Токен валиден" },
-          "401": { "description": "Токен не валиден" }
-        }
-      }
-    },
-    "/api/user/profile/": {
-      "get": {
-        "operationId": "user_profile",
-        "summary": "Профиль пользователя",
-        "tags": ["users"],
-        "security": [{ "jwtAuth": [] }],
-        "responses": {
-          "200": {
-            "description": "Данные профиля",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/User" }
-              }
-            }
-          },
-          "401": { "description": "Не авторизован" },
-          "429": { "description": "Слишком много запросов (100 в минуту)" }
-        }
-      }
-    },
-    "/api/documents/": {
-      "get": {
-        "operationId": "documents_list",
-        "summary": "Список документов",
-        "description": "Возвращает список документов текущего пользователя с пагинацией",
-        "tags": ["documents"],
-        "security": [{ "jwtAuth": [] }],
-        "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 10, "maximum": 100 } }
-        ],
-        "responses": {
-          "200": {
-            "description": "Список документов",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/PaginatedDocumentList" }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "documents_create",
-        "summary": "Создание документа",
-        "description": "Создаёт новый документ из текста или загруженного файла",
-        "tags": ["documents"],
-        "security": [{ "jwtAuth": [] }],
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "rubrics": { "type": "string", "description": "Рубрики через запятую", "example": "технологии, python, django" },
-                  "text": { "type": "string", "description": "Текст документа" },
-                  "is_public": { "type": "boolean", "default": false },
-                  "file": { "type": "string", "format": "binary", "description": "Файл (PDF, DOCX, XLSX, TXT)" }
-                }
-              }
             },
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/DocumentCreateUpdate" }
+            "post": {
+                "operationId": "documents_create",
+                "description": "Создать новый документ (текст или файл)",
+                "tags": [
+                    "documents"
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "rubrics": {
+                                        "type": "string",
+                                        "description": "Рубрики через запятую",
+                                        "example": "технологии, python, django"
+                                    },
+                                    "text": {
+                                        "type": "string",
+                                        "description": "Текст документа (если без файла)"
+                                    },
+                                    "is_public": {
+                                        "type": "boolean",
+                                        "description": "Публичный доступ",
+                                        "default": false
+                                    },
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "Файл (PDF, DOCX, XLSX, TXT)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Document"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
             }
-          }
         },
-        "responses": {
-          "201": {
-            "description": "Документ создан",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Document" } } }
-          },
-          "400": { "description": "Ошибка валидации" }
+        "/api/documents/{id}/": {
+            "get": {
+                "operationId": "documents_retrieve",
+                "description": "Получить документ по ID",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Document"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "documents_update",
+                "description": "Обновить документ полностью",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DocumentCreateUpdate"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DocumentCreateUpdate"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Document"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "documents_partial_update",
+                "description": "Частично обновить документ",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedDocumentCreateUpdate"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedDocumentCreateUpdate"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Document"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "documents_destroy",
+                "description": "Удалить документ",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Документ удалён"
+                    }
+                }
+            }
+        },
+        "/api/rubrics/": {
+            "get": {
+                "operationId": "rubrics_retrieve",
+                "description": "Получить список всех рубрик из доступных пользователю документов",
+                "tags": [
+                    "search"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Список рубрик"
+                    }
+                }
+            }
+        },
+        "/api/search/": {
+            "post": {
+                "operationId": "search_create",
+                "description": "Полнотекстовый поиск по документам с фильтрацией",
+                "tags": [
+                    "search"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "query": {
+                                        "type": "string",
+                                        "description": "Поисковый запрос",
+                                        "example": "python разработка"
+                                    },
+                                    "rubric": {
+                                        "type": "string",
+                                        "description": "Фильтр по рубрике",
+                                        "example": "технологии"
+                                    },
+                                    "privacy": {
+                                        "type": "string",
+                                        "enum": [
+                                            "all",
+                                            "public",
+                                            "private"
+                                        ],
+                                        "description": "Тип доступа",
+                                        "default": "all"
+                                    },
+                                    "page": {
+                                        "type": "integer",
+                                        "description": "Номер страницы",
+                                        "default": 1
+                                    }
+                                },
+                                "required": [
+                                    "query"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Успешный поиск"
+                    },
+                    "400": {
+                        "description": "Query parameter 'query' required"
+                    },
+                    "401": {
+                        "description": "Не авторизован"
+                    },
+                    "429": {
+                        "description": "Too many requests (30 per minute)"
+                    }
+                }
+            }
+        },
+        "/api/search/history/{id}/": {
+            "delete": {
+                "operationId": "search_history_destroy",
+                "description": "Удалить запись из истории поиска",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "pk",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "ID записи истории",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "search"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Удалено"
+                    },
+                    "404": {
+                        "description": "Не найдено"
+                    }
+                }
+            }
+        },
+        "/api/user/login/": {
+            "post": {
+                "operationId": "user_login_create",
+                "description": "Авторизация пользователя (возвращает JWT токены)",
+                "tags": [
+                    "user"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "description": "Email пользователя",
+                                        "example": "user@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "description": "Пароль",
+                                        "example": "StrongPass123!"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Успешный вход, возвращены токены"
+                    },
+                    "401": {
+                        "description": "Неверный email, пароль или email не подтверждён"
+                    },
+                    "429": {
+                        "description": "Too many login attempts (10 per 5 minutes)"
+                    }
+                }
+            }
+        },
+        "/api/user/logout/": {
+            "post": {
+                "operationId": "user_logout_create",
+                "description": "Выход из системы (blacklist refresh токена)",
+                "tags": [
+                    "user"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "refresh"
+                                ],
+                                "properties": {
+                                    "refresh": {
+                                        "type": "string",
+                                        "description": "Refresh токен (полученный при логине)",
+                                        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "205": {
+                        "description": "Токен успешно добавлен в blacklist"
+                    },
+                    "400": {
+                        "description": "Refresh token required или Invalid token"
+                    }
+                }
+            }
+        },
+        "/api/user/profile/": {
+            "get": {
+                "operationId": "user_profile_retrieve",
+                "description": "Получить профиль текущего пользователя",
+                "parameters": [
+                    {
+                        "in": "header",
+                        "name": "Authorization",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Bearer JWT токен (например: Bearer eyJhbGciOiJIUzI1NiIs...)",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "user"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        },
+                        "description": "Профиль пользователя"
+                    },
+                    "401": {
+                        "description": "Не авторизован"
+                    },
+                    "429": {
+                        "description": "Too many requests (100 per minute)"
+                    }
+                }
+            }
+        },
+        "/api/user/refresh/": {
+            "post": {
+                "operationId": "user_refresh_create",
+                "description": "Обновление access токена по refresh токену",
+                "tags": [
+                    "user"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "refresh"
+                                ],
+                                "properties": {
+                                    "refresh": {
+                                        "type": "string",
+                                        "description": "Refresh токен (полученный при логине)",
+                                        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Новый access токен"
+                    },
+                    "400": {
+                        "description": "Refresh token required или Invalid token"
+                    },
+                    "401": {
+                        "description": "Не авторизован"
+                    }
+                }
+            }
+        },
+        "/api/user/register/": {
+            "post": {
+                "operationId": "user_register_create",
+                "description": "Регистрация нового пользователя",
+                "tags": [
+                    "user"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email",
+                                    "password",
+                                    "password2"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "description": "Email пользователя",
+                                        "example": "user@example.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "description": "Пароль (минимум 8 символов)",
+                                        "example": "StrongPass123!"
+                                    },
+                                    "password2": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "description": "Подтверждение пароля",
+                                        "example": "StrongPass123!"
+                                    },
+                                    "first_name": {
+                                        "type": "string",
+                                        "description": "Имя (опционально)",
+                                        "example": "Иван"
+                                    },
+                                    "last_name": {
+                                        "type": "string",
+                                        "description": "Фамилия (опционально)",
+                                        "example": "Иванов"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Пользователь создан, отправлено письмо с подтверждением"
+                    },
+                    "400": {
+                        "description": "Ошибка валидации"
+                    },
+                    "429": {
+                        "description": "Too many registration attempts (3 per hour)"
+                    }
+                }
+            }
+        },
+        "/api/user/verify/": {
+            "post": {
+                "operationId": "user_verify_create",
+                "description": "Проверка валидности access токена",
+                "tags": [
+                    "user"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "token"
+                                ],
+                                "properties": {
+                                    "token": {
+                                        "type": "string",
+                                        "description": "Access токен для проверки",
+                                        "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "jwtAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Токен валиден"
+                    },
+                    "401": {
+                        "description": "Токен не валиден"
+                    }
+                }
+            }
         }
-      }
     },
-    "/api/documents/{id}/": {
-      "get": {
-        "operationId": "documents_retrieve",
-        "summary": "Получение документа",
-        "tags": ["documents"],
-        "security": [{ "jwtAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Document" } } } },
-          "403": { "description": "Нет доступа к документу" },
-          "404": { "description": "Документ не найден" }
-        }
-      },
-      "put": {
-        "operationId": "documents_update",
-        "summary": "Полное обновление документа",
-        "tags": ["documents"],
-        "security": [{ "jwtAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DocumentCreateUpdate" } } }
-        },
-        "responses": {
-          "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Document" } } } }
-        }
-      },
-      "patch": {
-        "operationId": "documents_partial_update",
-        "summary": "Частичное обновление",
-        "tags": ["documents"],
-        "security": [{ "jwtAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PatchedDocumentCreateUpdate" } } }
-        },
-        "responses": {
-          "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Document" } } } }
-        }
-      },
-      "delete": {
-        "operationId": "documents_destroy",
-        "summary": "Удаление документа",
-        "tags": ["documents"],
-        "security": [{ "jwtAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "204": { "description": "Документ удалён" },
-          "403": { "description": "Нет прав на удаление" },
-          "404": { "description": "Документ не найден" }
-        }
-      }
-    },
-    "/api/search/": {
-      "post": {
-        "operationId": "search",
-        "summary": "Поиск документов",
-        "description": "Полнотекстовый поиск с фильтрацией и подсветкой результатов",
-        "tags": ["search"],
-        "security": [{ "jwtAuth": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
+    "components": {
+        "schemas": {
+            "Document": {
                 "type": "object",
-                "required": ["query"],
+                "description": "Сериализатор для документа (чтение)",
                 "properties": {
-                  "query": { "type": "string", "description": "Поисковый запрос", "example": "python разработка" },
-                  "rubric": { "type": "string", "description": "Фильтр по рубрике" },
-                  "privacy": { "type": "string", "enum": ["all", "public", "private"], "default": "all" },
-                  "page": { "type": "integer", "default": 1, "minimum": 1 },
-                  "sort": { "type": "string", "enum": ["relevance", "date", "date_asc"], "default": "relevance" }
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "rubrics": {},
+                    "text": {
+                        "type": "string",
+                        "title": "Текст документа"
+                    },
+                    "created_date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "is_public": {
+                        "type": "boolean",
+                        "title": "Публичный документ"
+                    },
+                    "file": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "file_name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "text_source": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TextSourceEnum"
+                            }
+                        ],
+                        "readOnly": true,
+                        "title": "Источник текста"
+                    },
+                    "user_email": {
+                        "type": "string",
+                        "format": "email",
+                        "readOnly": true
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "created_date",
+                    "file",
+                    "file_name",
+                    "file_type",
+                    "id",
+                    "text",
+                    "text_source",
+                    "user_email",
+                    "user_id"
+                ]
+            },
+            "DocumentCreateUpdate": {
+                "type": "object",
+                "description": "Сериализатор для создания и обновления документа",
+                "properties": {
+                    "rubrics": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "text": {
+                        "type": "string",
+                        "title": "Текст документа"
+                    },
+                    "is_public": {
+                        "type": "boolean",
+                        "title": "Публичный документ"
+                    }
+                },
+                "required": [
+                    "rubrics",
+                    "text"
+                ]
+            },
+            "PaginatedDocumentList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Document"
+                        }
+                    }
                 }
-              }
+            },
+            "PatchedDocumentCreateUpdate": {
+                "type": "object",
+                "description": "Сериализатор для создания и обновления документа",
+                "properties": {
+                    "rubrics": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "text": {
+                        "type": "string",
+                        "title": "Текст документа"
+                    },
+                    "is_public": {
+                        "type": "boolean",
+                        "title": "Публичный документ"
+                    }
+                }
+            },
+            "TextSourceEnum": {
+                "enum": [
+                    "file",
+                    "manual"
+                ],
+                "type": "string",
+                "description": "* `file` - Из загруженного файла\n* `manual` - Ручной ввод"
+            },
+            "User": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 254
+                    },
+                    "first_name": {
+                        "type": "string",
+                        "title": "Имя",
+                        "maxLength": 30
+                    },
+                    "last_name": {
+                        "type": "string",
+                        "title": "Фамилия",
+                        "maxLength": 30
+                    },
+                    "full_name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "date_joined": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Дата регистрации"
+                    },
+                    "is_moderator": {
+                        "type": "boolean",
+                        "title": "Модератор"
+                    }
+                },
+                "required": [
+                    "date_joined",
+                    "email",
+                    "full_name",
+                    "id"
+                ]
             }
-          }
         },
-        "responses": {
-          "200": {
-            "description": "Результаты поиска",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } }
-          },
-          "400": { "description": "Query parameter 'query' required" },
-          "429": { "description": "Слишком много запросов (30 в минуту)" }
-        }
-      }
-    },
-    "/api/rubrics/": {
-      "get": {
-        "operationId": "rubrics_list",
-        "summary": "Список рубрик",
-        "description": "Возвращает уникальные рубрики из доступных пользователю документов",
-        "tags": ["search"],
-        "security": [{ "jwtAuth": [] }],
-        "responses": {
-          "200": {
-            "description": "Список рубрик",
-            "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" } } } }
-          }
-        }
-      }
-    },
-    "/api/search/history/{id}/": {
-      "delete": {
-        "operationId": "search_history_delete",
-        "summary": "Удаление из истории",
-        "tags": ["search"],
-        "security": [{ "jwtAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "204": { "description": "Запись удалена" },
-          "404": { "description": "Запись не найдена" }
-        }
-      }
-    },
-    "/health/": {
-      "get": {
-        "operationId": "health_check",
-        "summary": "Health check",
-        "description": "Проверка состояния PostgreSQL и Elasticsearch",
-        "tags": ["monitoring"],
-        "responses": {
-          "200": {
-            "description": "Все сервисы работают",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": { "type": "string", "enum": ["ok", "warning"] },
-                    "database": { "type": "string" },
-                    "elasticsearch": { "type": "string" }
-                  }
-                }
-              }
+        "securitySchemes": {
+            "jwtAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
             }
-          }
         }
-      }
     }
-  },
-  "components": {
-    "schemas": {
-      "User": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer", "readOnly": true },
-          "email": { "type": "string", "format": "email" },
-          "first_name": { "type": "string" },
-          "last_name": { "type": "string" },
-          "full_name": { "type": "string", "readOnly": true },
-          "date_joined": { "type": "string", "format": "date-time", "readOnly": true },
-          "is_moderator": { "type": "boolean", "readOnly": true }
-        }
-      },
-      "Document": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer", "readOnly": true },
-          "rubrics": { "type": "array", "items": { "type": "string" } },
-          "text": { "type": "string" },
-          "created_date": { "type": "string", "format": "date-time", "readOnly": true },
-          "is_public": { "type": "boolean" },
-          "user_email": { "type": "string", "format": "email", "readOnly": true },
-          "user_id": { "type": "integer", "readOnly": true }
-        }
-      },
-      "DocumentCreateUpdate": {
-        "type": "object",
-        "properties": {
-          "rubrics": { "type": "array", "items": { "type": "string" }, "maxItems": 10 },
-          "text": { "type": "string" },
-          "is_public": { "type": "boolean", "default": false }
-        }
-      },
-      "PatchedDocumentCreateUpdate": {
-        "type": "object",
-        "properties": {
-          "rubrics": { "type": "array", "items": { "type": "string" } },
-          "text": { "type": "string" },
-          "is_public": { "type": "boolean" }
-        }
-      },
-      "PaginatedDocumentList": {
-        "type": "object",
-        "properties": {
-          "count": { "type": "integer" },
-          "next": { "type": "string", "nullable": true },
-          "previous": { "type": "string", "nullable": true },
-          "results": { "type": "array", "items": { "$ref": "#/components/schemas/Document" } }
-        }
-      },
-      "SearchResult": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "rubrics": { "type": "array", "items": { "type": "string" } },
-          "text": { "type": "string" },
-          "created_date": { "type": "string" },
-          "is_public": { "type": "boolean" },
-          "highlights": { "type": "array", "items": { "type": "string" } }
-        }
-      },
-      "SearchResponse": {
-        "type": "object",
-        "properties": {
-          "count": { "type": "integer" },
-          "results": { "type": "array", "items": { "$ref": "#/components/schemas/SearchResult" } },
-          "page": { "type": "integer" },
-          "total_pages": { "type": "integer" },
-          "page_size": { "type": "integer" }
-        }
-      }
-    },
-    "securitySchemes": {
-      "jwtAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "JWT токен, полученный при авторизации"
-      }
-    }
-  }
 }

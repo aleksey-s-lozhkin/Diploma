@@ -103,6 +103,18 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
+    # Должно совпадать с продакшеном: без этого drf-spectacular отказывается
+    # строить схему, и её нельзя проверить в CI.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# Заголовок схемы берётся из этих настроек: без них сгенерированная в CI схема
+# отличалась бы от опубликованной пустыми title и version.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "DocSearch API",
+    "DESCRIPTION": "API для поиска по документам с аутентификацией",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 SIMPLE_JWT = {

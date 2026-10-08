@@ -41,8 +41,42 @@ class DocumentSerializer(serializers.ModelSerializer):
         ]
 
 
+class RubricField(serializers.CharField):
+    """Одна рубрика — строка.
+
+    CharField сам приводит числа к строке, и [1, 2, 3] прошло бы как
+    ["1", "2", "3"]; в базе рубрики — список строк, поэтому лучше отказать.
+    """
+
+    def to_internal_value(self, data):
+        if not isinstance(data, str):
+            self.fail("invalid")
+        return super().to_internal_value(data)
+
+
+class RubricsField(serializers.ListField):
+    """Рубрики: список строк или строка через запятую.
+
+    Поле объявлено явно, потому что rubrics в модели — JSONField: без этого в
+    схеме API он описывался как «любой JSON», хотя принимает только список
+    строк. Строка через запятую поддержана намеренно: так рубрики приходят из
+    web-формы.
+    """
+
+    child = RubricField()
+    default = list
+    required = False
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            data = [rubric.strip() for rubric in data.split(",") if rubric.strip()]
+        return super().to_internal_value(data)
+
+
 class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
     """Сериализатор для создания и обновления документа"""
+
+    rubrics = RubricsField()
 
     class Meta:
         model = Document

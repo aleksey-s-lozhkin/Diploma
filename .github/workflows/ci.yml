@@ -71,5 +71,26 @@ jobs:
       - name: Миграции полны
         run: poetry run python manage.py makemigrations --check --dry-run --settings=config.settings_ci
 
+      # Опубликованная схема API обязана совпадать с кодом: иначе документация
+      # расходится с реальностью и по ней нельзя генерировать клиентов.
+      # Сравниваются разобранные структуры, а не байты: генератор не ставит
+      # завершающий перевод строки, а pre-commit его в файл добавляет.
+      - name: Схема API актуальна
+        run: |
+          poetry run python manage.py spectacular --file /tmp/openapi.json \
+            --format openapi-json --settings=config.settings_ci
+          poetry run python - <<'PY'
+          import json
+          import sys
+
+          committed = json.load(open("docs/api/openapi.json"))
+          generated = json.load(open("/tmp/openapi.json"))
+          if committed != generated:
+              print("Схема API разошлась с кодом.")
+              print("Пересоберите: manage.py spectacular --file docs/api/openapi.json --format openapi-json")
+              sys.exit(1)
+          print("Схема API совпадает с кодом")
+          PY
+
       - name: Тесты
         run: poetry run pytest --no-cov -q
