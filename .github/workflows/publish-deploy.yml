@@ -261,6 +261,18 @@ jobs:
             docker image tag "$rollback_image" "$image_repository:rollback"
           fi
 
+          # Контейнер с нашим именем, но из прежнего compose, занимает имя
+          # навсегда: compose останавливает его, но не удаляет, и создание
+          # нового падает с «container name is already in use». --remove-orphans
+          # тут не помогает: проект тот же, отличается только имя сервиса.
+          stale_service=$(docker inspect \
+            --format '{{index .Config.Labels "com.docker.compose.service"}}' \
+            "$container" 2>/dev/null || true)
+          if [ -n "$stale_service" ] && [ "$stale_service" != "web" ]; then
+            echo "Удаляю контейнер $container из прежнего compose (сервис '$stale_service')."
+            docker rm -f "$container"
+          fi
+
           compose_for_image "$image" pull migrate web
 
           deployment_started=1
@@ -283,16 +295,24 @@ jobs:
             compose_for_image "$rollback_image" up -d --no-build --remove-orphans
             rollback_ready=0
             for attempt in $(seq 1 90); do
-              if [ "$(docker inspect --format '{{.State.Health.Status}}' \
-                "$container" 2>/dev/null || echo unknown)" = "healthy" ]; then
+              rollback_health=$(docker inspect --format \
+                '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+                "$container" 2>/dev/null || echo missing)
+              rollback_running=$(docker inspect --format '{{.State.Running}}' \
+                "$container" 2>/dev/null || echo false)
+              # Прежний образ может быть из версии без /health/ready/ — тогда
+              # healthcheck у него вечно красный. Принимаем и просто запущенный
+              # контейнер, иначе удачный откат выглядел бы провалом.
+              if [ "$rollback_health" = "healthy" ] || [ "$rollback_running" = "true" ]; then
                 rollback_ready=1
+                echo "После отката: health=$rollback_health, running=$rollback_running"
                 break
               fi
               sleep 2
             done
             if [ "$rollback_ready" -ne 1 ]; then
-              echo "Предыдущий образ не стал healthy после отката." >&2
-              docker inspect --format '{{json .State.Health}}' "$container" || true
+              echo "Предыдущий образ не запустился после отката." >&2
+              docker inspect --format '{{json .State}}' "$container" || true
               exit "$deploy_status"
             fi
 

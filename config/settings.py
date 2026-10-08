@@ -193,6 +193,13 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+    # Проверки состояния опрашиваются по http изнутри контейнера (docker
+    # healthcheck) и не должны попадать под редирект на HTTPS: иначе urllib
+    # уходит на https://127.0.0.1:8000, получает таймаут рукопожатия и
+    # контейнер навсегда остаётся unhealthy, а вместе с ним падает гейт деплоя.
+    # Наружу эти адреса не отдаются: nginx проксирует только HTTPS.
+    SECURE_REDIRECT_EXEMPT = [r"^health/"]
+
 # =====================
 # CORS НАСТРОЙКИ
 # =====================
