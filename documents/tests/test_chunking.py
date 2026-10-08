@@ -12,12 +12,7 @@
 занимаются.
 """
 
-from documents.chunking import (
-    MIN_CHARS,
-    TARGET_CHARS,
-    Chunk,
-    split_into_chunks,
-)
+from documents.chunking import MIN_CHARS, TARGET_CHARS, Chunk, split_into_chunks
 
 PARAGRAPHS = "\n\n".join(f"Абзац номер {index}. " + "Слово " * 60 for index in range(12))
 
