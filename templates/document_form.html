@@ -1,53 +1,49 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load ui %}
 
 {% block title %}Новый документ{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-10">
-        <div class="card shadow">
-            <div class="card-header bg-primary text-white">
-                <h4 class="mb-0">📝 Новый документ</h4>
-            </div>
-            <div class="card-body">
-                <form method="post" enctype="multipart/form-data">
-                    {% csrf_token %}
+<p class="crumbs"><a href="{% url 'dashboard' %}">{% icon "back" 16 %} Мои документы</a></p>
 
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">📂 Рубрики (через запятую)</label>
-                        <input type="text" name="rubrics" class="form-control" value="{{ rubrics_value }}">
-                        <div class="form-text">Пример: технологии, python, django</div>
-                    </div>
+<h1>Новый документ</h1>
 
-                    <div class="form-check mb-3">
-                        <input type="checkbox" name="is_public" id="is_public" class="form-check-input">
-                        <label class="form-check-label" for="is_public">
-                            🌍 Поделиться — документ будет доступен для поиска всем пользователям
-                        </label>
-                        <div class="form-text text-muted">Если включить, другие пользователи смогут найти этот документ</div>
-                    </div>
+<form method="post" enctype="multipart/form-data" class="card">
+    {% csrf_token %}
 
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">📎 Загрузить файл</label>
-                        <input type="file" name="file" id="file-input" class="form-control" accept=".pdf,.docx,.xlsx,.txt">
-                        <div class="form-text">Поддерживаются PDF, DOCX, XLSX, TXT</div>
-                    </div>
+    <div class="stack">
+        <div>
+            <label for="id_rubrics">Рубрики</label>
+            <input type="text" name="rubrics" id="id_rubrics" value="{{ rubrics_value }}"
+                   placeholder="технологии, python, django">
+            <small class="muted">Через запятую, до 10 рубрик. По ним документ потом ищется в фильтре.</small>
+        </div>
 
-                    <hr>
+        <div>
+            <label for="file-input">Файл</label>
+            <input type="file" name="file" id="file-input" accept=".pdf,.docx,.xlsx,.txt">
+            <small class="muted">PDF, DOCX, XLSX или TXT, до 20 МБ. Текст извлекается автоматически.</small>
+        </div>
 
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">✏️ Или введите текст вручную</label>
-                        <textarea name="text" id="id_text" class="form-control" rows="15"></textarea>
-                    </div>
+        <div>
+            <label for="id_text">Или текст вручную</label>
+            <textarea name="text" id="id_text" rows="12"
+                      placeholder="Вставьте текст документа">{{ text_value }}</textarea>
+            <small class="muted">Если выбран файл, текст из него важнее: вручную введённое не сохранится.</small>
+        </div>
 
-                    <div class="d-flex justify-content-between">
-                        <a href="{% url 'dashboard' %}" class="btn btn-secondary">Отмена</a>
-                        <button type="submit" class="btn btn-primary">Сохранить</button>
-                    </div>
-                </form>
-            </div>
+        <div class="check">
+            <input type="checkbox" name="is_public" id="is_public">
+            <label for="is_public">
+                Поделиться документом
+                <small>Публичный документ найдут все пользователи сервиса. По умолчанию виден только вам.</small>
+            </label>
         </div>
     </div>
-</div>
+
+    <div class="actions">
+        <button type="submit">Сохранить</button>
+        <a class="button ghost" href="{% url 'dashboard' %}">Отмена</a>
+    </div>
+</form>
 {% endblock %}
