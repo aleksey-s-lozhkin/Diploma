@@ -140,23 +140,48 @@ docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' | sort -k2 -h
 Публичный домен сканируют боты. Признаки: строки `DisallowedHost` в логах,
 регистрации с неподтверждённых адресов.
 
-```bash
-# Неподтверждённые пользователи
-docker exec postgres psql -U diploma -d diploma -c \
-  "SELECT id, email, date_joined FROM users_user WHERE NOT is_email_verified ORDER BY id;"
+Запросы по IP и на неизвестные имена домена обрываются на общем nginx
+(`00-default-server.conf`: `return 444` для http и `ssl_reject_handshake` для
+https). Проверочный путь ACME там оставлен рабочим, иначе нельзя было бы
+выпустить сертификат новому домену. До этой правки сервером по умолчанию для
+`:443` был vhost diploma, и лог приложения рос от сканеров: 1,7 млн строк.
 
-# Удалить конкретного
-docker exec postgres psql -U diploma -d diploma -c "DELETE FROM users_user WHERE id = N;"
+```bash
+# Кто зарегистрировался и что у него есть
+docker exec postgres psql -U diploma -d diploma -c "
+SELECT u.id, u.email, u.date_joined::date, u.is_email_verified,
+       (SELECT count(*) FROM documents_document d WHERE d.user_id = u.id) AS docs
+FROM users_user u ORDER BY u.id;"
+
+# Удалить разом мёртвые аккаунты: не подтверждённые и без данных
+docker exec -i postgres psql -U diploma -d diploma <<'SQL'
+BEGIN;
+CREATE TEMP TABLE junk AS
+SELECT u.id FROM users_user u
+WHERE NOT u.is_email_verified
+  AND NOT EXISTS (SELECT 1 FROM documents_document d WHERE d.user_id = u.id)
+  AND NOT EXISTS (SELECT 1 FROM documents_searchhistory h WHERE h.user_id = u.id)
+  AND NOT EXISTS (SELECT 1 FROM django_admin_log l WHERE l.user_id = u.id);
+DELETE FROM users_user u USING junk j WHERE u.id = j.id;
+COMMIT;
+SQL
 ```
 
-Регистрация ограничена тремя попытками в час на адрес (`documents/rate_limit.py`),
-но при недоступном Redis лимит не применяется — это осознанный выбор в пользу
-доступности. Если входящий спам станет проблемой, следующий шаг — капча на
-регистрации, а не ужесточение лимита.
+Перед удалением обязателен дамп: `pg_dump -Fc`, см. раздел про бэкапы.
 
-Отдельная мера на уровне хоста: сейчас блок `:443` приложения работает сервером
-по умолчанию, поэтому запросы по IP попадают в diploma. Общий nginx выиграл бы от
-catch-all блока с `return 444` — это правка на хосте, затрагивающая все проекты.
+Особенности, которые нужно помнить:
+
+- регистрация ставит `is_active=True` сразу, поэтому «неподтверждённый» и
+  «неактивный» — не одно и то же; войти без подтверждения всё равно нельзя
+  (`LoginView` и `APILoginView` проверяют `is_email_verified`);
+- **API-регистрация возвращает access и refresh токены до подтверждения почты.**
+  Это ослабляет смысл верификации: аккаунт сразу может пользоваться API.
+  Исправление — не выдавать токены до подтверждения, но это изменение контракта,
+  поэтому оно ждёт решения (другой проект может зависеть от текущего поведения);
+- лимит регистрации — три попытки в час **на адрес**, поэтому волна регистраций
+  с разных адресов им не ограничивается; при недоступном Redis лимит вообще не
+  применяется (осознанный выбор в пользу доступности). Действенная мера против
+  волны — капча на регистрации.
 
 ## Сертификат
 
@@ -171,3 +196,34 @@ docker run --rm -v /srv/data/certbot:/var/www/certbot \
 Продление — задание cron пользователя деплоя, см. `docs/DEPLOY.md`. Файл
 `/srv/data/letsencrypt/archive/*/cert1.pem` в единственном числе означает, что
 сертификат ни разу не продлевался.
+
+### Сертификаты
+
+Все домены хоста берут сертификаты из `/srv/data/letsencrypt`, который продлевает
+cron пользователя деплоя (см. `docs/DEPLOY.md`): `docsearch`, `lapot`, `sam`,
+`cloud` и общий на `pyconstrictor.ru`, `www.pyconstrictor.ru` и
+`equip.pyconstrictor.ru`. Каталог `/srv/config/ssl` больше не используется —
+файлы там остались от прежней схемы, ссылок на них в vhost'ах нет.
+
+```bash
+# Сроки всех сертификатов хранилища
+for d in /srv/data/letsencrypt/live/*/; do
+  echo -n "$(basename "$d"): "
+  docker run --rm -v "$d:/c:ro" alpine:3 sh -c \
+    'apk add --no-cache openssl >/dev/null 2>&1; openssl x509 -in /c/fullchain.pem -noout -enddate'
+done
+
+# Проверка продления без изменений
+docker run --rm -v /srv/data/certbot:/var/www/certbot \
+  -v /srv/data/letsencrypt:/etc/letsencrypt \
+  certbot/certbot renew --webroot -w /var/www/certbot --dry-run
+```
+
+Две вещи, без которых продление молча не работает:
+
+- **проверочный путь ACME в `:80` блоке.** У `equip.pyconstrictor.ru` и
+  `cloud.pyconstrictor.ru` его не было, поэтому сертификаты этих имён не
+  продлевались: запрос уходил по редиректу на https, где его обрабатывало
+  приложение. Новому домену без этого пути сертификат тоже не выпустить;
+- **редирект внутри `location /`, а не на уровне сервера.** Серверный `return`
+  в nginx выполняется до выбора location и перебивает ACME-путь.
