@@ -197,35 +197,33 @@ docker run --rm -v /srv/data/certbot:/var/www/certbot \
 `/srv/data/letsencrypt/archive/*/cert1.pem` в единственном числе означает, что
 сертификат ни разу не продлевался.
 
-### Сертификаты в /srv/config/ssl никто не продлевает
+### Сертификаты
 
-`docsearch.pyconstrictor.ru` берёт сертификат из `/srv/data/letsencrypt` —
-его продлевает cron. Но у `pyconstrictor.ru`, `www.pyconstrictor.ru` и
-`equip.pyconstrictor.ru` сертификат лежит в `/srv/config/ssl/fullchain.pem`,
-и этот каталог не продлевает никто: он не смонтирован в certbot, а хостовый
-`certbot.timer` работает с `/etc/letsencrypt` хоста.
-
-Сертификат `pyconstrictor.ru` выпущен 2 августа 2026 и истекает **31 октября
-2026**. Продление этого набора имён: выпустить один сертификат на все три имени
-в общий каталог и переключить на него vhost'ы:
+Все домены хоста берут сертификаты из `/srv/data/letsencrypt`, который продлевает
+cron пользователя деплоя (см. `docs/DEPLOY.md`): `docsearch`, `lapot`, `sam`,
+`cloud` и общий на `pyconstrictor.ru`, `www.pyconstrictor.ru` и
+`equip.pyconstrictor.ru`. Каталог `/srv/config/ssl` больше не используется —
+файлы там остались от прежней схемы, ссылок на них в vhost'ах нет.
 
 ```bash
-docker run --rm \
-  -v /srv/data/certbot:/var/www/certbot \
-  -v /srv/data/letsencrypt:/etc/letsencrypt \
-  certbot/certbot certonly --webroot -w /var/www/certbot \
-  -d pyconstrictor.ru -d www.pyconstrictor.ru -d equip.pyconstrictor.ru \
-  --email ВАШ_ЯЩИК@pyconstrictor.ru --agree-tos --no-eff-email --non-interactive
-```
-
-После этого в `pyconstrictor.ru-redirect.conf` и `equipment.conf` пути
-`ssl_certificate` меняются на `/etc/letsencrypt/live/pyconstrictor.ru/...`, и
-дальше сертификат продлевается общим cron вместе с остальными.
-
-Проверить, что сертификат не забыт:
-
-```bash
-for f in /srv/config/ssl/*fullchain*.pem; do
-  echo "$f: $(openssl x509 -in "$f" -noout -enddate 2>/dev/null)"
+# Сроки всех сертификатов хранилища
+for d in /srv/data/letsencrypt/live/*/; do
+  echo -n "$(basename "$d"): "
+  docker run --rm -v "$d:/c:ro" alpine:3 sh -c \
+    'apk add --no-cache openssl >/dev/null 2>&1; openssl x509 -in /c/fullchain.pem -noout -enddate'
 done
+
+# Проверка продления без изменений
+docker run --rm -v /srv/data/certbot:/var/www/certbot \
+  -v /srv/data/letsencrypt:/etc/letsencrypt \
+  certbot/certbot renew --webroot -w /var/www/certbot --dry-run
 ```
+
+Две вещи, без которых продление молча не работает:
+
+- **проверочный путь ACME в `:80` блоке.** У `equip.pyconstrictor.ru` и
+  `cloud.pyconstrictor.ru` его не было, поэтому сертификаты этих имён не
+  продлевались: запрос уходил по редиректу на https, где его обрабатывало
+  приложение. Новому домену без этого пути сертификат тоже не выпустить;
+- **редирект внутри `location /`, а не на уровне сервера.** Серверный `return`
+  в nginx выполняется до выбора location и перебивает ACME-путь.
