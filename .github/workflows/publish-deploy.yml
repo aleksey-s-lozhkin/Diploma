@@ -60,8 +60,14 @@ jobs:
       - name: isort
         run: poetry run isort --check-only --profile black --line-length 120 .
 
+      # Исключения те же, что в .pre-commit-config.yaml. Без .venv в списке
+      # flake8 обходит локально созданное окружение и выдаёт тысячи замечаний
+      # к чужим пакетам.
       - name: Flake8
-        run: poetry run flake8 . --count --max-line-length=120 --statistics --ignore=E203,W503,E501
+        run: >-
+          poetry run flake8 . --count --max-line-length=120 --statistics
+          --ignore=E203,W503,E501
+          --exclude=migrations,.venv,venv,__pycache__,htmlcov
 
       - name: Проверки Django
         run: poetry run python manage.py check --settings=config.settings_ci

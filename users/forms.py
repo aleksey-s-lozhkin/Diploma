@@ -77,11 +77,10 @@ class PasswordResetRequestForm(forms.Form):
 
     email = forms.EmailField(label="Email", widget=forms.EmailInput(attrs={"class": "form-control"}))
 
-    def clean_email(self):
-        email = self.cleaned_data.get("email")
-        if not User.objects.filter(email=email).exists():
-            raise ValidationError("Пользователь с таким email не найден")
-        return email
+    # Проверки существования адреса здесь нет намеренно. Раньше форма отвечала
+    # «Пользователь с таким email не найден», и по этому сообщению можно было
+    # перебором выяснить, кто зарегистрирован, — при том что представление
+    # отвечает одинаково для любого адреса именно чтобы этого не допустить.
 
 
 class PasswordResetConfirmForm(forms.Form):
