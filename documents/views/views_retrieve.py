@@ -9,6 +9,7 @@
 import logging
 from collections import Counter
 
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from elasticsearch.exceptions import NotFoundError, TransportError
 from elasticsearch_dsl import Q, Search
 from rest_framework import status
@@ -17,6 +18,7 @@ from rest_framework.views import APIView
 
 from documents.auth import ApiTokenAuthentication, HasApiToken
 from documents.models import ApiToken
+from documents.serializers import RetrieveRequestSerializer, RetrieveResponseSerializer
 from documents.services.chunk_service import CHUNKS_INDEX
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,21 @@ class RetrieveView(APIView):
     authentication_classes = [ApiTokenAuthentication]
     permission_classes = [HasApiToken]
 
+    @extend_schema(
+        summary="Поиск отрывков документов",
+        description=(
+            "Отдаёт отрывки документов, найденные по запросу. Кого искать — решает токен: "
+            "служебный видит только публичные документы, персональный — свои и публичные. "
+            "Пустой results при 200 означает «не нашлось»; 503 — поиск недоступен, и "
+            "потребитель обязан сказать об этом, а не отвечать по памяти модели."
+        ),
+        request=RetrieveRequestSerializer,
+        responses={
+            200: RetrieveResponseSerializer,
+            400: OpenApiResponse(description="Ошибка потребителя: запрос вне границ контракта"),
+            503: OpenApiResponse(description="Поиск недоступен: Elasticsearch или индекс отрывков"),
+        },
+    )
     def post(self, request):
         # Идентификатор пользователя в запросе запрещён контрактом (§2): иначе
         # ошибка в любом потребителе открывала бы чужие документы. Отвечаем

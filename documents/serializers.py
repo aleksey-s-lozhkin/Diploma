@@ -111,3 +111,56 @@ class SearchHistorySerializer(serializers.ModelSerializer):
         model = SearchHistory
         fields = ["id", "query", "results_count", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+# --- Поиск отрывков для потребителей (docs/SEARCH-CONTRACT.md) -------------
+#
+# Форма описана сериализаторами не ради валидации — её проверяет само
+# представление, — а ради схемы: потребитель должен видеть границу в
+# сгенерированном описании API, а не вычитывать её из кода.
+
+
+class RetrieveRequestSerializer(serializers.Serializer):
+    """Запрос поиска отрывков (контракт, §2)."""
+
+    query = serializers.CharField(
+        min_length=3,
+        max_length=1000,
+        help_text="Текст запроса, от 3 до 1000 знаков",
+    )
+    limit = serializers.IntegerField(
+        required=False,
+        default=10,
+        min_value=1,
+        max_value=50,
+        help_text="Сколько отрывков вернуть: по умолчанию 10, максимум 50",
+    )
+    rubrics = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="Сузить поиск до рубрик",
+    )
+
+
+class RetrieveResultSerializer(serializers.Serializer):
+    """Один отрывок (контракт, §3)."""
+
+    document_id = serializers.IntegerField()
+    chunk_index = serializers.IntegerField()
+    chunk_total = serializers.IntegerField()
+    document_version = serializers.CharField(help_text="Отпечаток содержимого: видно, что документ изменился")
+    title = serializers.CharField()
+    text = serializers.CharField(help_text="Отрывок целиком, с перехлёстом")
+    score = serializers.FloatField(help_text="Шкала BM25: для сортировки и отладки, человеку не показывать")
+    rubrics = serializers.ListField(child=serializers.CharField())
+    is_public = serializers.BooleanField(help_text="Можно ли пересказывать это всем")
+
+
+class RetrieveResponseSerializer(serializers.Serializer):
+    """Ответ поиска отрывков."""
+
+    results = RetrieveResultSerializer(many=True)
+    source = serializers.ChoiceField(
+        choices=["hybrid", "fulltext", "vector"],
+        help_text="Чем именно нашли: потребитель должен знать, что векторный поиск деградировал",
+    )

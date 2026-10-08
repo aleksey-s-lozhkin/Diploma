@@ -682,6 +682,59 @@
                     }
                 }
             }
+        },
+        "/api/v1/search/retrieve": {
+            "post": {
+                "operationId": "v1_search_retrieve_create",
+                "description": "Отдаёт отрывки документов, найденные по запросу. Кого искать — решает токен: служебный видит только публичные документы, персональный — свои и публичные. Пустой results при 200 означает «не нашлось»; 503 — поиск недоступен, и потребитель обязан сказать об этом, а не отвечать по памяти модели.",
+                "summary": "Поиск отрывков документов",
+                "tags": [
+                    "v1"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RetrieveRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RetrieveRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RetrieveRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "ApiToken": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RetrieveResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Ошибка потребителя: запрос вне границ контракта"
+                    },
+                    "503": {
+                        "description": "Поиск недоступен: Elasticsearch или индекс отрывков"
+                    }
+                }
+            }
         }
     },
     "components": {
@@ -828,6 +881,120 @@
                     }
                 }
             },
+            "RetrieveRequest": {
+                "type": "object",
+                "description": "Запрос поиска отрывков (контракт, §2).",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Текст запроса, от 3 до 1000 знаков",
+                        "maxLength": 1000,
+                        "minLength": 3
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "maximum": 50,
+                        "minimum": 1,
+                        "default": 10,
+                        "description": "Сколько отрывков вернуть: по умолчанию 10, максимум 50"
+                    },
+                    "rubrics": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Сузить поиск до рубрик"
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            },
+            "RetrieveResponse": {
+                "type": "object",
+                "description": "Ответ поиска отрывков.",
+                "properties": {
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RetrieveResult"
+                        }
+                    },
+                    "source": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/SourceEnum"
+                            }
+                        ],
+                        "description": "Чем именно нашли: потребитель должен знать, что векторный поиск деградировал\n\n* `hybrid` - hybrid\n* `fulltext` - fulltext\n* `vector` - vector"
+                    }
+                },
+                "required": [
+                    "results",
+                    "source"
+                ]
+            },
+            "RetrieveResult": {
+                "type": "object",
+                "description": "Один отрывок (контракт, §3).",
+                "properties": {
+                    "document_id": {
+                        "type": "integer"
+                    },
+                    "chunk_index": {
+                        "type": "integer"
+                    },
+                    "chunk_total": {
+                        "type": "integer"
+                    },
+                    "document_version": {
+                        "type": "string",
+                        "description": "Отпечаток содержимого: видно, что документ изменился"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Отрывок целиком, с перехлёстом"
+                    },
+                    "score": {
+                        "type": "number",
+                        "format": "double",
+                        "description": "Шкала BM25: для сортировки и отладки, человеку не показывать"
+                    },
+                    "rubrics": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "is_public": {
+                        "type": "boolean",
+                        "description": "Можно ли пересказывать это всем"
+                    }
+                },
+                "required": [
+                    "chunk_index",
+                    "chunk_total",
+                    "document_id",
+                    "document_version",
+                    "is_public",
+                    "rubrics",
+                    "score",
+                    "text",
+                    "title"
+                ]
+            },
+            "SourceEnum": {
+                "enum": [
+                    "hybrid",
+                    "fulltext",
+                    "vector"
+                ],
+                "type": "string",
+                "description": "* `hybrid` - hybrid\n* `fulltext` - fulltext\n* `vector` - vector"
+            },
             "TextSourceEnum": {
                 "enum": [
                     "file",
@@ -882,6 +1049,12 @@
             }
         },
         "securitySchemes": {
+            "ApiToken": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "ds_s_… (служебный) или ds_p_… (персональный)",
+                "description": "Токен потребителя поиска: кого искать, решает он, а не запрос"
+            },
             "jwtAuth": {
                 "type": "http",
                 "scheme": "bearer",

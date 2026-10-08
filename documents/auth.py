@@ -10,6 +10,7 @@
 import logging
 
 from django.utils import timezone
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework import permissions
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
@@ -75,3 +76,22 @@ class HasApiToken(permissions.BasePermission):
 
     def has_permission(self, request, view):
         return isinstance(request.auth, ApiToken)
+
+
+class ApiTokenAuthenticationScheme(OpenApiAuthenticationExtension):
+    """Описание токена потребителя для схемы API.
+
+    Без этого расширения drf-spectacular не знает, как показать способ
+    аутентификации, и в описании появляется предупреждение вместо схемы.
+    """
+
+    target_class = "documents.auth.ApiTokenAuthentication"
+    name = "ApiToken"
+
+    def get_security_definition(self, auto_schema):
+        return {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "ds_s_… (служебный) или ds_p_… (персональный)",
+            "description": "Токен потребителя поиска: кого искать, решает он, а не запрос",
+        }
