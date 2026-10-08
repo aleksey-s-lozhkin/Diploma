@@ -1,0 +1,59 @@
+name: CI
+
+# Проверки на каждом пуше, кроме main: там те же шаги выполняет
+# publish-deploy.yml перед публикацией образа. Дублировать их запуск на main
+# смысла нет, но и публиковать непроверенный код нельзя.
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: 2.4.1
+
+jobs:
+  checks:
+    name: Линтеры, проверки Django и тесты
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить репозиторий
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: poetry
+
+      - name: Установить Poetry
+        run: pip install --disable-pip-version-check "poetry==${POETRY_VERSION}"
+
+      - name: Зависимости
+        run: poetry install --no-interaction --no-root
+
+      - name: Black
+        run: poetry run black --check --line-length 120 .
+
+      - name: isort
+        run: poetry run isort --check-only --profile black --line-length 120 .
+
+      - name: Flake8
+        run: poetry run flake8 . --count --max-line-length=120 --statistics --ignore=E203,W503,E501
+
+      # Системные проверки Django: ловят неверные настройки и битые модели.
+      - name: Проверки Django
+        run: poetry run python manage.py check --settings=config.settings_ci
+
+      # Незакоммиченная миграция означает, что на сервере схема разъедется с
+      # кодом: приложение поднимется и начнёт отвечать 500 на новых полях.
+      - name: Миграции полны
+        run: poetry run python manage.py makemigrations --check --dry-run --settings=config.settings_ci
+
+      - name: Тесты
+        run: poetry run pytest --no-cov -q

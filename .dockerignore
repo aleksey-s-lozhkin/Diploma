@@ -1,0 +1,46 @@
+# Файлы, которых не должно быть в образе.
+#
+# Без этого файла COPY . . тянет в слои .git, локальные .env с секретами,
+# собранную статику, тесты и кэши, а образ раздувается на сотни мегабайт.
+
+.git
+.gitignore
+.github
+
+# Локальное окружение и кэши
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+coverage_report.txt
+
+# Секреты: ни локальный .env, ни его варианты в образ не попадают.
+# .env.example остаётся — он без секретов и нужен для документации.
+.env
+.env.*
+!.env.example
+
+# Данные и сгенерированные каталоги
+media
+staticfiles
+logs
+db.sqlite3
+*.log
+
+# Собранная статика: её собирает collectstatic внутри контейнера.
+# Исходники лежат в static_src и нужны.
+static
+
+# Разработка и редакторы
+tests
+docs
+Dockerfile_bak
+*.md
+!README.md
+.idea
+.vscode
+.DS_Store

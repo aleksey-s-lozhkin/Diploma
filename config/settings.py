@@ -240,12 +240,12 @@ CORS_PREFLIGHT_MAX_AGE = 86400  # 24 часа
 # CSRF НАСТРОЙКИ
 # =====================
 
-# Доверенные источники для CSRF
+# Доверенные источники для CSRF. Читаются из окружения: при смене домена
+# правка настроек не требуется, а захардкоженный список раньше перекрывал .env.
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost",
-    "http://127.0.0.1",
-    "https://pyconstrictor.ru",
-    "https://www.pyconstrictor.ru",
+    origin.strip()
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost,http://127.0.0.1").split(",")
+    if origin.strip()
 ]
 
 # CSRF настройки для HTMX

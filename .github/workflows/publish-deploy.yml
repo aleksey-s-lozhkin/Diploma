@@ -1,0 +1,321 @@
+name: Публикация и деплой diploma
+
+# Пуш в main проверяет код, собирает образ, публикует его в Docker Hub и
+# разворачивает конкретный SHA на сервере. workflow_dispatch позволяет повторить
+# деплой уже собранного коммита без нового пуша — например, после починки
+# сертификата или конфига nginx.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Деплой не отменяется новым пушем: прерванный на середине откат оставил бы
+# сервер в неизвестном состоянии.
+concurrency:
+  group: diploma-production
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: alserloz/diploma
+  POETRY_VERSION: 2.4.1
+
+jobs:
+  verify:
+    name: Проверка перед публикацией
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить репозиторий
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: poetry
+
+      - name: Установить Poetry
+        run: pip install --disable-pip-version-check "poetry==${POETRY_VERSION}"
+
+      - name: Зависимости
+        run: poetry install --no-interaction --no-root
+
+      - name: Black
+        run: poetry run black --check --line-length 120 .
+
+      - name: isort
+        run: poetry run isort --check-only --profile black --line-length 120 .
+
+      - name: Flake8
+        run: poetry run flake8 . --count --max-line-length=120 --statistics --ignore=E203,W503,E501
+
+      - name: Проверки Django
+        run: poetry run python manage.py check --settings=config.settings_ci
+
+      - name: Миграции полны
+        run: poetry run python manage.py makemigrations --check --dry-run --settings=config.settings_ci
+
+      # Публиковать образ, не прогнав тесты, нельзя: тег latest уедет на сервер,
+      # где откатывать уже нечего.
+      - name: Тесты
+        run: poetry run pytest --no-cov -q
+
+  publish:
+    name: Публикация образа в Docker Hub
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Получить репозиторий
+        uses: actions/checkout@v4
+
+      - name: Настроить Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Войти в Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Публикуются два тега: latest — то, что поднимает ручной запуск, и SHA —
+      # то, что разворачивает деплой и на что потом откатываются.
+      - name: Собрать и опубликовать образ
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Деплой на сервер
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      # Ключ и known_hosts приходят из секретов, а не из состояния раннера:
+      # раннер одноразовый.
+      - name: Разблокировать ключ деплоя
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.DEPLOY_SSH_KEY_PASSPHRASE }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          cat > "$RUNNER_TEMP/ssh-askpass" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$SSH_PASSPHRASE"
+          EOF
+          chmod 700 "$RUNNER_TEMP/ssh-askpass"
+          eval "$(ssh-agent -s)"
+          DISPLAY=1 SSH_ASKPASS="$RUNNER_TEMP/ssh-askpass" \
+            SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/id_ed25519 < /dev/null
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+
+      - name: Загрузить образ и перезапустить приложение
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "bash -s -- '$IMAGE'" <<'REMOTE'
+          set -eu
+
+          image=$1
+          env_file=/srv/config/env/diploma.env
+          compose_dir=/srv/compose/diploma
+          container=diploma-web
+
+          # Образ и файл окружения передаются снаружи, чтобы compose.yaml
+          # оставался неизменным: тот же файл обслуживает и обычный деплой, и
+          # откат на предыдущий тег.
+          compose_for_image() {
+            local selected_image=$1
+            shift
+            env DIPLOMA_IMAGE="$selected_image" \
+                DIPLOMA_ENV_FILE="$env_file" \
+                docker compose -f compose.yaml "$@"
+          }
+
+          cd "$compose_dir"
+
+          # Запоминаем образ, который работает сейчас, ДО любых изменений:
+          # именно на него вернёмся, если новый не поднимется.
+          rollback_image=$(docker inspect \
+            --format '{{.Config.Image}}' "$container" 2>/dev/null || true)
+
+          image_repository=${image%:*}
+          minimum_free_kb=$((5 * 1024 * 1024))
+
+          available_kb() {
+            df -Pk "$compose_dir" | awk 'NR == 2 {print $4}'
+          }
+
+          prune_old_release_images() {
+            protected_image_id=""
+            if [ -n "$rollback_image" ]; then
+              protected_image_id=$(docker image inspect \
+                --format '{{.Id}}' "$rollback_image" 2>/dev/null || true)
+            fi
+
+            docker builder prune -f >/dev/null || true
+            docker image prune -f >/dev/null || true
+            docker image ls "$image_repository" \
+              --format '{{.Repository}}:{{.Tag}}' |
+            while read -r image_ref; do
+              if [ -z "$image_ref" ] \
+                  || [ "$image_ref" = "$image_repository:<none>" ] \
+                  || [ "$image_ref" = "$image_repository:latest" ] \
+                  || [ "$image_ref" = "$image_repository:rollback" ]; then
+                continue
+              fi
+              image_id=$(docker image inspect \
+                --format '{{.Id}}' "$image_ref" 2>/dev/null || true)
+              if [ -n "$protected_image_id" ] \
+                  && [ "$image_id" = "$protected_image_id" ]; then
+                continue
+              fi
+              docker image rm "$image_ref" >/dev/null 2>&1 || true
+            done
+          }
+
+          # Диск на хосте общий с чужими контейнерами: забить его образами
+          # diploma означает уронить соседей, поэтому проверка идёт до загрузки.
+          if [ "$(available_kb)" -lt "$minimum_free_kb" ]; then
+            echo "Свободного места меньше 5 ГиБ; удаляю старые образы перед загрузкой."
+            prune_old_release_images
+          fi
+          if [ "$(available_kb)" -lt "$minimum_free_kb" ]; then
+            echo "Для деплоя нужно не меньше 5 ГиБ свободного места." >&2
+            df -h "$compose_dir"
+            exit 1
+          fi
+
+          # Тег rollback — локальная метка на предыдущий работающий образ.
+          if [ -n "$rollback_image" ]; then
+            docker image tag "$rollback_image" "$image_repository:rollback"
+          fi
+
+          compose_for_image "$image" pull migrate web
+
+          deployment_started=1
+          rollback_deployment() {
+            deploy_status=$?
+            trap - EXIT
+            if [ "$deploy_status" -eq 0 ] || [ "$deployment_started" -ne 1 ]; then
+              exit "$deploy_status"
+            fi
+
+            set +e
+            echo "Деплой не удался; собираю журналы перед откатом."
+            compose_for_image "$image" logs --tail=100 migrate web
+            if [ -z "$rollback_image" ]; then
+              echo "Предыдущего образа нет — автоматический откат невозможен."
+              exit "$deploy_status"
+            fi
+
+            echo "Возвращаю предыдущий образ."
+            compose_for_image "$rollback_image" up -d --no-build
+            rollback_ready=0
+            for attempt in $(seq 1 90); do
+              if [ "$(docker inspect --format '{{.State.Health.Status}}' \
+                "$container" 2>/dev/null || echo unknown)" = "healthy" ]; then
+                rollback_ready=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$rollback_ready" -ne 1 ]; then
+              echo "Предыдущий образ не стал healthy после отката." >&2
+              docker inspect --format '{{json .State.Health}}' "$container" || true
+              exit "$deploy_status"
+            fi
+
+            # Адрес контейнера в сети infra изменился при пересоздании, поэтому
+            # nginx нужно перечитать конфигурацию и здесь.
+            if docker exec nginx nginx -t; then
+              docker exec nginx nginx -s reload
+            else
+              echo "Проверка конфигурации nginx не прошла во время отката." >&2
+            fi
+            echo "Предыдущий образ восстановлен; деплой остаётся неуспешным."
+            exit "$deploy_status"
+          }
+          trap rollback_deployment EXIT
+
+          # api зависит от migrate с условием service_completed_successfully,
+          # поэтому схема применяется до старта приложения: неудачная миграция не
+          # оставит работающий сервис на неготовой базе.
+          compose_for_image "$image" up -d --no-build
+
+          # Ждём именно healthy, а не запущенный контейнер: healthcheck
+          # проверяет /health/ready/, то есть и PostgreSQL. Запущенный, но
+          # неготовый контейнер пропустил бы деплой дальше и вернул 502.
+          app_ready=0
+          for attempt in $(seq 1 90); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' \
+              "$container" 2>/dev/null || echo unknown)" = "healthy" ]; then
+              app_ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$app_ready" -ne 1 ]; then
+            echo "$container не стал healthy за 180 секунд." >&2
+            docker inspect --format '{{json .State.Health}}' "$container" || true
+            compose_for_image "$image" logs --tail=100 migrate web
+            exit 1
+          fi
+
+          # Пересозданный контейнер получает новый адрес в сети infra, а nginx
+          # держит старый в upstream. Без reload часть запросов уходит в никуда.
+          docker exec nginx nginx -t
+          docker exec nginx nginx -s reload
+          compose_for_image "$image" ps
+
+          # Оставляем текущий образ и тег rollback, остальные SHA удаляем.
+          docker image tag "$image" "$image_repository:latest"
+          current_image_id=$(docker image inspect --format '{{.Id}}' "$image")
+          rollback_image_id=$(docker image inspect \
+            --format '{{.Id}}' "$image_repository:rollback" 2>/dev/null || true)
+          docker image ls "$image_repository" \
+            --format '{{.Repository}}:{{.Tag}}' |
+          while read -r image_ref; do
+            if [ -z "$image_ref" ] \
+                || [ "$image_ref" = "$image_repository:<none>" ] \
+                || [ "$image_ref" = "$image_repository:latest" ] \
+                || [ "$image_ref" = "$image_repository:rollback" ]; then
+              continue
+            fi
+            image_id=$(docker image inspect \
+              --format '{{.Id}}' "$image_ref" 2>/dev/null || true)
+            if [ "$image_id" = "$current_image_id" ] \
+                || [ "$image_id" = "$rollback_image_id" ]; then
+              continue
+            fi
+            docker image rm "$image_ref" >/dev/null 2>&1 || true
+          done
+          docker image prune -f >/dev/null || true
+
+          deployment_started=0
+          trap - EXIT
+          REMOTE
