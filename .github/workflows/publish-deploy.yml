@@ -36,10 +36,20 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: poetry
 
       - name: Установить Poetry
         run: pip install --disable-pip-version-check "poetry==${POETRY_VERSION}"
+
+      # Кэш poetry подключается отдельным шагом, а не параметром `cache` у
+      # setup-python: тот параметр требует poetry, установленного до самого
+      # действия, и на чистом раннере шаг падает.
+      - name: Кэш Poetry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ runner.os }}-${{ env.POETRY_VERSION }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ env.POETRY_VERSION }}-
 
       - name: Зависимости
         run: poetry install --no-interaction --no-root
