@@ -1,14 +1,14 @@
 import logging
-import os
 
-from django.conf import settings
-from django.db import models
+from django.db.models import Q
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from elasticsearch.exceptions import TransportError
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from documents.constants import DocumentValidationError, normalize_rubrics, parse_positive_int, validate_uploaded_file
 from documents.models import Document, SearchHistory
 from documents.rate_limit import RateLimiters
 from documents.serializers import DocumentCreateUpdateSerializer, DocumentSerializer
@@ -67,22 +67,30 @@ class SearchView(APIView):
         query = request.data.get("query", "").strip()
         rubric = request.data.get("rubric", "")
         privacy = request.data.get("privacy", "all")
-        page = int(request.data.get("page", 1))
+        page = parse_positive_int(request.data.get("page", 1))
 
         if not query:
             return Response({"error": "Query parameter 'query' required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Используем сервис поиска
-        service = SearchService(request.user)
-        search_response = service.search(
-            query=query,
-            rubric=rubric,
-            privacy=privacy,
-            page=page,
-            save_history=True,
-            with_highlights=False,
-            with_truncation=True,
-        )
+        # Используем сервис поиска. Отказ Elasticsearch не должен выглядеть как
+        # внутренняя ошибка: для клиента это временная недоступность сервиса.
+        try:
+            service = SearchService(request.user)
+            search_response = service.search(
+                query=query,
+                rubric=rubric,
+                privacy=privacy,
+                page=page,
+                save_history=True,
+                with_highlights=False,
+                with_truncation=True,
+            )
+        except TransportError as exc:
+            logger.warning("Поиск недоступен (пользователь %s): %s", user_id, exc)
+            return Response(
+                {"error": "Поиск временно недоступен. Попробуйте позже."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         total_pages = search_response.total_pages
 
@@ -144,12 +152,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
             raise Throttled(wait=retry_after)
 
-        # Обработка рубрик
-        rubrics_data = request.data.get("rubrics", [])
-        if isinstance(rubrics_data, str):
-            rubrics = [r.strip() for r in rubrics_data.split(",") if r.strip()]
-        else:
-            rubrics = rubrics_data
+        # Обработка рубрик: строка через запятую или список
+        try:
+            rubrics = normalize_rubrics(request.data.get("rubrics", []))
+        except DocumentValidationError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Обработка is_public
         is_public = request.data.get("is_public", False)
@@ -159,50 +166,31 @@ class DocumentViewSet(viewsets.ModelViewSet):
         uploaded_file = request.FILES.get("file")
 
         if uploaded_file:
-            file_name = uploaded_file.name
-            file_type = file_name.split(".")[-1].lower()
+            try:
+                file_type = validate_uploaded_file(uploaded_file)
+            except DocumentValidationError as exc:
+                logger.warning("Загрузка отклонена (пользователь %s): %s", request.user.id, exc)
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-            allowed_types = ["pdf", "docx", "xlsx", "txt"]
-            if file_type not in allowed_types:
-                logger.warning(f"Unsupported file type {file_type} uploaded by user {request.user.id}")
-                return Response(
-                    {"error": f"Неподдерживаемый тип файла. Разрешены: {', '.join(allowed_types)}"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            if len(rubrics) > 10:
-                return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
-
+            # Текст читается из загруженного файла: документ создаётся одним
+            # запросом и не зависит от пути к файлу в MEDIA_ROOT.
             document = Document.objects.create(
                 user=request.user,
                 rubrics=rubrics,
-                text="",
+                text=extract_text_from_file(uploaded_file, file_type),
                 is_public=is_public,
                 file=uploaded_file,
-                file_name=file_name,
+                file_name=uploaded_file.name,
                 file_type=file_type,
                 text_source="file",
             )
-
-            file_path = os.path.join(settings.MEDIA_ROOT, document.file.name)
-            extracted_text = extract_text_from_file(file_path, file_type)
-            document.text = extracted_text
-            document.save()
-
-            output_serializer = DocumentSerializer(document)
-            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
-
         else:
-            text = request.data.get("text", "")
-            if not text:
+            if not (request.data.get("text") or "").strip():
                 return Response(
                     {"error": "Укажите либо 'text', либо загрузите 'file'"}, status=status.HTTP_400_BAD_REQUEST
                 )
 
-            if len(rubrics) > 10:
-                return Response({"error": "Не более 10 рубрик"}, status=status.HTTP_400_BAD_REQUEST)
-
-            create_serializer = DocumentCreateUpdateSerializer(data=request.data)
+            create_serializer = DocumentCreateUpdateSerializer(data={**request.data, "rubrics": rubrics})
             create_serializer.is_valid(raise_exception=True)
 
             document = Document.objects.create(
@@ -210,10 +198,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 rubrics=create_serializer.validated_data.get("rubrics", []),
                 text=create_serializer.validated_data["text"],
                 is_public=create_serializer.validated_data.get("is_public", False),
+                file=None,
+                file_name="",
+                file_type="",
+                text_source="manual",
             )
 
-            output_serializer = DocumentSerializer(document)
-            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+        return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         tags=["documents"],
@@ -259,7 +250,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
-        return Document.objects.filter(user=self.request.user).order_by("-created_date")
+        # select_related: сериализатор отдаёт email и id владельца, без этого
+        # список из N документов даёт N дополнительных запросов.
+        return Document.objects.filter(user=self.request.user).select_related("user").order_by("-created_date")
 
     def get_serializer_class(self):
         if self.action in ["create", "update", "partial_update"]:
@@ -281,13 +274,11 @@ class RubricsView(APIView):
         },
     )
     def get(self, request):
-        documents = Document.objects.filter(models.Q(user=request.user) | models.Q(is_public=True)).values_list(
-            "rubrics", flat=True
-        )
+        documents = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).values_list("rubrics", flat=True)
 
         unique_rubrics = set()
         for rubrics_list in documents:
-            for rubric in rubrics_list:
+            for rubric in rubrics_list or []:
                 unique_rubrics.add(rubric)
 
         return Response(sorted(unique_rubrics))

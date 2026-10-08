@@ -42,6 +42,19 @@ class RateLimiter:
         return self._cache_key_template.format(key=key)
 
     def check(self, key: str) -> Tuple[bool, int, int]:
+        """Проверяет rate limit для ключа.
+
+        Отказ кэша трактуется как разрешение (fail-open): лимит защищает от
+        перебора, но недоступный Redis не должен останавливать вход,
+        регистрацию и создание документов. Факт отказа попадает в лог.
+        """
+        try:
+            return self._check(key)
+        except Exception:
+            logger.warning("[RL:%s] Кэш недоступен, лимит для %s не применяется", self.prefix, key, exc_info=True)
+            return True, self.limit, 0
+
+    def _check(self, key: str) -> Tuple[bool, int, int]:
         """Проверяет rate limit для ключа"""
         cache_key = self._get_cache_key(key)
         now = time.time()
@@ -90,13 +103,21 @@ class RateLimiter:
     def reset(self, key: str) -> None:
         """Сбросить лимит для ключа"""
         cache_key = self._get_cache_key(key)
-        cache.delete(cache_key)
+        try:
+            cache.delete(cache_key)
+        except Exception:
+            logger.warning("[RL:%s] Не удалось сбросить лимит для %s", self.prefix, key, exc_info=True)
+            return
         logger.info(f"[RL:{self.prefix}] Reset for {key}")
 
     def get_current_count(self, key: str) -> int:
         """Получить текущее количество запросов для ключа"""
         cache_key = self._get_cache_key(key)
-        data = cache.get(cache_key)
+        try:
+            data = cache.get(cache_key)
+        except Exception:
+            logger.warning("[RL:%s] Кэш недоступен, счётчик для %s неизвестен", self.prefix, key, exc_info=True)
+            return 0
         return data["count"] if data else 0
 
 

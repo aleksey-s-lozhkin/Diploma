@@ -1,7 +1,5 @@
 import logging
-import os
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
@@ -11,19 +9,24 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
-from django.views.decorators.cache import cache_page, never_cache
-from django.views.decorators.vary import vary_on_cookie
+from django.views.decorators.cache import never_cache
 from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
-from elasticsearch.exceptions import ConnectionError, NotFoundError
+from elasticsearch.exceptions import NotFoundError, TransportError
 
+from documents.constants import (
+    MAX_TEXT_LENGTH,
+    DocumentValidationError,
+    normalize_rubrics,
+    parse_positive_int,
+    validate_uploaded_file,
+)
 from documents.models import Document, SearchHistory
 from documents.rate_limit import RateLimiters
+from documents.rubrics import get_cached_rubrics
 from documents.services.search_service import SearchService
 from documents.utils import extract_text_from_file
 
 logger = logging.getLogger(__name__)
-
-MAX_TEXT_LENGTH = 100000
 
 
 class LogoutView(View):
@@ -32,17 +35,17 @@ class LogoutView(View):
         return redirect("index")
 
 
-@method_decorator(cache_page(60 * 2), name="dispatch")
-@method_decorator(vary_on_cookie, name="dispatch")
+@method_decorator(never_cache, name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class IndexView(View):
+    """Главная страница.
+
+    Кэшируется не страница целиком, а список рубрик: cache_page без
+    vary_on_cookie отдавал пользователю разметку, собранную для другого.
+    """
+
     def get(self, request):
-        rubrics = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).values_list("rubrics", flat=True)
-        unique_rubrics = set()
-        for rubrics_list in rubrics:
-            for rubric in rubrics_list:
-                unique_rubrics.add(rubric)
-        return render(request, "index.html", {"rubrics": sorted(unique_rubrics)})
+        return render(request, "index.html", {"rubrics": get_cached_rubrics(request.user)})
 
 
 @method_decorator(never_cache, name="dispatch")
@@ -64,7 +67,7 @@ class SearchResultsView(View):
         query = request.POST.get("query", "").strip()
         rubric = request.POST.get("rubric", "")
         privacy = request.POST.get("privacy", "all")
-        page = int(request.POST.get("page", 1))
+        page = parse_positive_int(request.POST.get("page", 1))
         sort_by = request.POST.get("sort", "relevance")
 
         # Пустой запрос - показываем подсказку
@@ -92,7 +95,9 @@ class SearchResultsView(View):
             )
 
         try:
-            # Используем сервис поиска
+            # Используем сервис поиска. Сортировка передаётся в Elasticsearch:
+            # сортировка списка результатов в Python упорядочивала только
+            # текущую страницу, а не весь найденный набор.
             service = SearchService(request.user)
             search_response = service.search(
                 query=query,
@@ -102,14 +107,10 @@ class SearchResultsView(View):
                 save_history=True,
                 with_highlights=True,
                 with_truncation=False,
+                sort=sort_by,
             )
 
             results_list = [r.to_dict() for r in search_response.results]
-
-            if sort_by == "date":
-                results_list.sort(key=lambda x: x.get("created_date", ""), reverse=True)
-            elif sort_by == "date_asc":
-                results_list.sort(key=lambda x: x.get("created_date", ""))
 
             # Получаем page_range для пагинации
             total_pages = search_response.total_pages
@@ -149,27 +150,25 @@ class SearchResultsView(View):
                     "sort": sort_by,
                 },
             )
-        except ConnectionError as e:
-            logger.warning(f"Elasticsearch connection failed for user {user_id}: {e}")
-            return render(
-                request,
-                "partials/search_results.html",
-                {
-                    "results": [],
-                    "query": query,
-                    "error": "🔍 Поиск временно недоступен. Пожалуйста, попробуйте позже.",
-                },
-            )
+        except TransportError as e:
+            # Любая ошибка Elasticsearch: недоступен, отказал в доступе, не нашёл
+            # индекс, ответил 429. Раньше ловились только ConnectionError и
+            # NotFoundError, а остальные — например 401 при включённой
+            # безопасности — давали 500.
+            if isinstance(e, NotFoundError):
+                logger.error("Индекс 'documents' не найден: %s", e)
+                message = "⚙️ Ошибка конфигурации поиска. Администратор уже уведомлён."
+            else:
+                logger.warning("Elasticsearch недоступен для пользователя %s: %s", user_id, e)
+                message = "🔍 Поиск временно недоступен. Пожалуйста, попробуйте позже."
 
-        except NotFoundError as e:
-            logger.error(f"Elasticsearch index 'documents' not found: {e}")
             return render(
                 request,
                 "partials/search_results.html",
                 {
                     "results": [],
                     "query": query,
-                    "error": "⚙️ Ошибка конфигурации поиска. Администратор уже уведомлён.",
+                    "error": message,
                 },
             )
 
@@ -191,7 +190,7 @@ class SearchResultsView(View):
 class DashboardView(View):
     def get(self, request):
         show_public = request.GET.get("show_public") == "true"
-        page = int(request.GET.get("page", 1))
+        page = parse_positive_int(request.GET.get("page", 1))
         page_size = 6
 
         if show_public:
@@ -241,87 +240,69 @@ class DocumentCreateView(View):
             return redirect("dashboard")
 
         rubrics_str = request.POST.get("rubrics", "")
-        rubrics = [r.strip() for r in rubrics_str.split(",") if r.strip()]
+        raw_text = request.POST.get("text", "").strip()
+        is_public = request.POST.get("is_public") == "on"
+        uploaded_file = request.FILES.get("file")
 
-        # Проверка количества рубрик
-        if len(rubrics) > 10:
-            messages.error(request, "Не более 10 рубрик")
+        def form_error(message):
+            """Возвращает форму с сохранённым вводом и сообщением об ошибке."""
+            messages.error(request, message)
             return render(
                 request,
                 "document_form.html",
                 {
                     "is_edit": False,
                     "rubrics_value": rubrics_str,
-                    "text_value": request.POST.get("text", ""),
-                    "text_source": request.POST.get("text_source", "manual"),
-                    "is_file_uploaded": bool(request.FILES.get("file")),
+                    "text_value": raw_text,
+                    "text_source": "file" if uploaded_file else "manual",
+                    "is_file_uploaded": bool(uploaded_file),
                 },
             )
 
-        # Проверка длины каждой рубрики
-        for rubric in rubrics:
-            if len(rubric) > 100:
-                messages.error(request, f"Рубрика '{rubric[:50]}...' слишком длинная. Максимум 100 символов.")
-                return render(
-                    request,
-                    "document_form.html",
-                    {
-                        "is_edit": False,
-                        "rubrics_value": rubrics_str,
-                        "text_value": request.POST.get("text", ""),
-                        "text_source": request.POST.get("text_source", "manual"),
-                        "is_file_uploaded": bool(request.FILES.get("file")),
-                    },
-                )
-
-        raw_text = request.POST.get("text", "").strip()
-        is_public = request.POST.get("is_public") == "on"
+        try:
+            rubrics = normalize_rubrics(rubrics_str)
+        except DocumentValidationError as exc:
+            return form_error(str(exc))
 
         if len(raw_text) > MAX_TEXT_LENGTH:
-            messages.error(request, f"Текст слишком длинный (максимум {MAX_TEXT_LENGTH} символов)")
-            return render(request, "document_form.html", {"form": request.POST})
-
-        text_source = "manual"
-        uploaded_file = request.FILES.get("file")
+            return form_error(f"Текст слишком длинный (максимум {MAX_TEXT_LENGTH} символов)")
 
         if uploaded_file:
-            file_name = uploaded_file.name
-            file_type = file_name.split(".")[-1].lower()
-            text_source = "file"
+            try:
+                file_type = validate_uploaded_file(uploaded_file)
+            except DocumentValidationError as exc:
+                return form_error(str(exc))
 
-            doc = Document.objects.create(
+            # Текст читается из загруженного файла до сохранения: документ
+            # записывается один раз, а не дважды, и не зависит от того, по
+            # какому пути оказался файл в MEDIA_ROOT.
+            extracted_text = extract_text_from_file(uploaded_file, file_type)
+            Document.objects.create(
                 user=request.user,
                 rubrics=rubrics,
-                text="",
+                text=extracted_text,
                 is_public=is_public,
                 file=uploaded_file,
-                file_name=file_name,
+                file_name=uploaded_file.name,
                 file_type=file_type,
-                text_source=text_source,
+                text_source="file",
             )
-
-            file_path = os.path.join(settings.MEDIA_ROOT, doc.file.name)
-            extracted_text = extract_text_from_file(file_path, file_type)
-            doc.text = extracted_text
-            doc.save()
-
-            messages.success(request, "Документ успешно создан")
-            if request.htmx:
-                response = HttpResponseClientRedirect("/dashboard/")
-                response["HX-Trigger"] = "rubricsUpdated"
-                return response
-            return redirect("dashboard")
-
-        Document.objects.create(
-            user=request.user,
-            rubrics=rubrics,
-            text=raw_text,
-            is_public=is_public,
-            file=None,
-            file_name="",
-            file_type="",
-            text_source=text_source,
-        )
+            if not extracted_text:
+                messages.warning(
+                    request,
+                    "Текст из файла извлечь не удалось — документ сохранён без содержимого",
+                )
+        else:
+            Document.objects.create(
+                user=request.user,
+                rubrics=rubrics,
+                text=raw_text,
+                is_public=is_public,
+                file=None,
+                file_name="",
+                file_type="",
+                text_source="manual",
+            )
 
         messages.success(request, "Документ успешно создан")
         if request.htmx:
@@ -335,6 +316,10 @@ class DocumentCreateView(View):
 class DocumentDeleteView(View):
     def delete(self, request, pk):
         doc = get_object_or_404(Document, pk=pk, user=request.user)
+        # Файл сам по себе не удаляется вместе со строкой: без этого каталог
+        # media копил бы осиротевшие документы, недоступные из интерфейса.
+        if doc.file:
+            doc.file.delete(save=False)
         doc.delete()
         messages.success(request, f"Документ #{pk} удалён")
         return HttpResponseClientRefresh()
@@ -344,7 +329,7 @@ class DocumentDeleteView(View):
 @method_decorator(login_required, name="dispatch")
 class SearchHistoryView(View):
     def get(self, request):
-        page = int(request.GET.get("page", 1))
+        page = parse_positive_int(request.GET.get("page", 1))
         page_size = 20
 
         history_list = SearchHistory.objects.filter(user=request.user).order_by("-created_at")
@@ -396,14 +381,7 @@ class TogglePublicView(View):
         return redirect(request.META.get("HTTP_REFERER", "dashboard"))
 
 
-@method_decorator(cache_page(60 * 60), name="dispatch")
 @method_decorator(login_required, name="dispatch")
 class GetRubricsView(View):
     def get(self, request):
-        rubrics = Document.objects.filter(Q(user=request.user) | Q(is_public=True)).values_list("rubrics", flat=True)
-        unique_rubrics = set()
-        for rubrics_list in rubrics:
-            for rubric in rubrics_list:
-                unique_rubrics.add(rubric)
-
-        return render(request, "partials/rubrics_select.html", {"rubrics": sorted(unique_rubrics)})
+        return render(request, "partials/rubrics_select.html", {"rubrics": get_cached_rubrics(request.user)})

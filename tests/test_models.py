@@ -1,10 +1,12 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
 from documents.models import Document, SearchHistory
+from documents.rubrics import rubrics_cache_key
 
 User = get_user_model()
 
@@ -119,18 +121,20 @@ class DocumentModelTest(TestCase):
         )
         self.assertFalse(doc.is_public)
 
-    def test_document_tracks_original_public_status(self):
-        """Документ отслеживает изменение публичности"""
-        doc = Document.objects.create(
-            user=self.user,
-            text="Test",
-            is_public=False,
-        )
-        self.assertEqual(doc._original_is_public, False)
+    def test_saving_document_clears_rubrics_cache(self):
+        """Изменение документов сбрасывает кэш рубрик владельца
 
-        doc.is_public = True
-        doc.save()
-        self.assertEqual(doc._original_is_public, True)
+        Раньше кэш чистился по шаблону через Redis delete_pattern, которого нет
+        у не-Redis бэкендов, и по фиктивным ключам cache_page, которые не
+        совпадали с реальными.
+        """
+        key = rubrics_cache_key(self.user.id)
+        cache.set(key, ["старое"], timeout=60)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            Document.objects.create(user=self.user, text="Test")
+
+        self.assertIsNone(cache.get(key))
 
 
 class SearchHistoryModelTest(TestCase):

@@ -1,3 +1,4 @@
+import tempfile
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -21,6 +22,10 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "drf_spectacular",
     "django_htmx",
+    # Приложение подключено намеренно: именно его сигналы писали в Elasticsearch
+    # без обработки ошибок и роняли создание документа. Без него регрессионные
+    # тесты из tests/test_resilience.py были бы вхолостую.
+    "django_elasticsearch_dsl",
     "users",
     "documents",
 ]
@@ -68,6 +73,9 @@ AUTH_USER_MODEL = "users.User"
 # Отключаем Elasticsearch полностью
 ELASTICSEARCH_DSL = {"default": {"hosts": "http://localhost:9200"}}
 ELASTICSEARCH_DSL_AUTO_REFRESH = False
+# Должно совпадать с продакшеном: включённый автосинк библиотеки пишет в ES без
+# обработки ошибок и роняет Document.save().
+ELASTICSEARCH_DSL_AUTOSYNC = False
 
 # Мокаем клиент Elasticsearch
 
@@ -85,6 +93,9 @@ CACHES = {
 
 STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
+# Без MEDIA_ROOT загруженные в тестах файлы падали в рабочий каталог — внутрь
+# пакета documents/2026/<месяц>/<день>/. Складываем их во временный каталог.
+MEDIA_ROOT = Path(tempfile.mkdtemp(prefix="diploma-test-media-"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -92,6 +103,18 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
+    # Должно совпадать с продакшеном: без этого drf-spectacular отказывается
+    # строить схему, и её нельзя проверить в CI.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# Заголовок схемы берётся из этих настроек: без них сгенерированная в CI схема
+# отличалась бы от опубликованной пустыми title и version.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "DocSearch API",
+    "DESCRIPTION": "API для поиска по документам с аутентификацией",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 SIMPLE_JWT = {

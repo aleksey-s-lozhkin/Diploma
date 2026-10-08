@@ -1,44 +1,105 @@
+# Production-раскладка diploma на общем хосте приложений.
+#
+# На сервере этот файл лежит как /srv/compose/diploma/compose.yaml:
+#
+#   /srv/compose/diploma/compose.yaml    этот файл
+#   /srv/compose/diploma/.env            образ и путь к окружению, без секретов
+#   /srv/config/env/diploma.env          окружение и секреты приложения (600)
+#   /srv/data/diploma/{static,media}     статика и загруженные документы
+#
+# Здесь нет ни секретов, ни сервисов инфраструктуры: PostgreSQL, Redis,
+# Elasticsearch и nginx — общие контейнеры в сети `infra`, поднятые отдельно.
+# Поэтому у файла нет ни volumes под базу, ни depends_on на неё: он описывает
+# только то, чем управляет сам.
+#
+# diploma не публикует порты на хост. nginx находит контейнер по имени
+# `diploma-web` внутри сети `infra`; опубликованный порт означал бы доступ в
+# обход прокси — без HTTPS и без заголовков X-Forwarded-*.
+#
+# Образ и файл окружения задаются снаружи, чтобы один и тот же файл годился и
+# для обычного деплоя, и для отката на предыдущий тег:
+#
+#   DIPLOMA_IMAGE=alserloz/diploma:latest \
+#   DIPLOMA_ENV_FILE=/srv/config/env/diploma.env \
+#     docker compose -f compose.yaml up -d --no-build
+
+name: diploma
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    # Ротация обязательна. Без неё json-file растёт бесконечно: лог одного
+    # только diploma-web успел вырасти до 1,7 млн строк — почти всё это
+    # DisallowedHost от сканеров, ходящих по IP.
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  image: ${DIPLOMA_IMAGE:?Задайте DIPLOMA_IMAGE, например alserloz/diploma:latest}
+  env_file:
+    - ${DIPLOMA_ENV_FILE:-/srv/config/env/diploma.env}
+  networks:
+    - infra
+  logging: *default-logging
+
 services:
-  web:
-    image: ${{ secrets.DOCKER_USERNAME }}/diploma:latest
-    container_name: docsearch_web
-    ports:
-      - "8001:8000"
-    command: >
-      sh -c "
-        python manage.py migrate &&
-        python manage.py collectstatic --noinput &&
-        python manage.py search_index --rebuild -f &&
-        gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2 --access-logfile - --error-logfile -
-      "
+  # Одноразовый сервис: применяет схему и собирает статику, затем завершается.
+  #
+  # Отдельный сервис, а не команда внутри web: при нескольких репликах
+  # миграции стартовали бы параллельно и дрались за одну схему, а падение
+  # схемы выглядело бы как «web почему-то не поднялся». Здесь же оно видно
+  # отдельной строкой в `docker compose ps`.
+  migrate:
+    <<: *app
+    container_name: diploma-migrate
+    restart: "no"
+    command:
+      - timeout
+      - "120"
+      - sh
+      - -c
+      - >-
+        until python manage.py migrate --noinput; do
+        echo "migrate: база ещё не готова, повтор через 3 с" >&2;
+        sleep 3;
+        done
+        && python manage.py collectstatic --noinput
     volumes:
-      - ./static:/app/static
-      - ./media:/app/media
-      - ./logs:/app/logs
-    environment:
-      - DJANGO_SETTINGS_MODULE=config.settings
-      - DEBUG=${DEBUG:-False}
-      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
-      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS}
-      - DB_HOST=${DB_HOST:-host.docker.internal}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - REDIS_URL=${REDIS_URL:-redis://host.docker.internal:6379/0}
-      - EMAIL_HOST=${EMAIL_HOST}
-      - EMAIL_PORT=${EMAIL_PORT}
-      - EMAIL_USE_SSL=${EMAIL_USE_SSL}
-      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
-      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
-      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
+      # Статику собирает этот же сервис: nginx отдаёт её из /srv/data/diploma/static.
+      - /srv/data/diploma/static:/app/static
+
+  web:
+    <<: *app
+    container_name: diploma-web
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - app_network
+    # Портов на хост нет намеренно — вход только через nginx.
+    expose:
+      - "8000"
+    depends_on:
+      migrate:
+        # Схема обязана существовать до первого запроса, иначе приложение
+        # поднимется и начнёт отвечать 500 на каждый запрос к документам.
+        condition: service_completed_successfully
+    volumes:
+      - /srv/data/diploma/media:/app/media
+      - /srv/data/diploma/static:/app/static
+    healthcheck:
+      # Именно readiness: он проверяет ещё и PostgreSQL. Контейнер, который жив,
+      # но не может обслужить запрос, не должен считаться развёрнутым.
+      # Redis и Elasticsearch в отчёте есть, но готовность не роняют.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health/ready/', timeout=5)
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
 networks:
-  app_network:
+  # Общая сеть хоста. external: true означает, что compose её не создаёт и не
+  # удаляет — иначе `docker compose down` снёс бы сеть, в которой живут чужие
+  # контейнеры.
+  infra:
     external: true
-    name: docker-nginx_web-network  # Сеть от основного Nginx (с Nextcloud)

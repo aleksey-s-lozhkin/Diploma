@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.mail import send_mail
 from django.urls import reverse
-from django.utils.html import strip_tags
+from django.utils.html import escape, strip_tags
 
 
 def send_verification_email(user, request):
@@ -35,7 +35,7 @@ def send_verification_email(user, request):
     <body>
         <div class="container">
             <h2>Подтверждение регистрации</h2>
-            <p>Здравствуйте, {user.get_full_name() or user.email}!</p>
+            <p>Здравствуйте, {escape(user.get_full_name() or user.email)}!</p>
             <p>Для подтверждения вашего email и активации аккаунта, пожалуйста, нажмите на кнопку ниже:</p>
             <a href="{verification_url}" class="button">Подтвердить email</a>
             <p>Или скопируйте ссылку в браузер:</p>
@@ -92,7 +92,7 @@ def send_password_reset_email(user, request):
     <body>
         <div class="container">
             <h2>Сброс пароля</h2>
-            <p>Здравствуйте, {user.get_full_name() or user.email}!</p>
+            <p>Здравствуйте, {escape(user.get_full_name() or user.email)}!</p>
             <p>Вы запросили сброс пароля на нашем сайте. Для установки нового пароля нажмите на кнопку ниже:</p>
             <a href="{reset_url}" class="button">Сбросить пароль</a>
             <p>Или скопируйте ссылку в браузер:</p>

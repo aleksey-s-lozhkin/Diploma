@@ -1,6 +1,5 @@
 from django.urls import path
-from django.views.decorators.cache import cache_page, never_cache
-from django.views.decorators.vary import vary_on_cookie
+from django.views.decorators.cache import never_cache
 
 from documents.views.views_web import (
     ClearHistoryView,
@@ -20,8 +19,9 @@ from documents.views.views_web import (
 urlpatterns = [
     # Аутентификация
     path("logout/", LogoutView.as_view(), name="logout"),
-    # Главная страница (кэш 2 минуты, зависит от cookie пользователя)
-    path("", cache_page(60 * 2)(vary_on_cookie(IndexView.as_view())), name="index"),
+    # Главная страница: кэшируется не разметка, а список рубрик (см. documents/rubrics.py),
+    # поэтому страница всегда отдаётся под текущего пользователя.
+    path("", never_cache(IndexView.as_view()), name="index"),
     # Страницы требующие актуальных данных (без кэша)
     path("dashboard/", never_cache(DashboardView.as_view()), name="dashboard"),
     path("search/results/", never_cache(SearchResultsView.as_view()), name="search_results"),

@@ -1,0 +1,96 @@
+name: CI
+
+# Проверки на каждом пуше, кроме main: там те же шаги выполняет
+# publish-deploy.yml перед публикацией образа. Дублировать их запуск на main
+# смысла нет, но и публиковать непроверенный код нельзя.
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: 2.4.1
+
+jobs:
+  checks:
+    name: Линтеры, проверки Django и тесты
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить репозиторий
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установить Poetry
+        run: pip install --disable-pip-version-check "poetry==${POETRY_VERSION}"
+
+      # Кэш poetry подключается отдельным шагом, а не параметром `cache` у
+      # setup-python: тот параметр требует poetry, установленного до самого
+      # действия, и на чистом раннере шаг падает.
+      - name: Кэш Poetry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ runner.os }}-${{ env.POETRY_VERSION }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ env.POETRY_VERSION }}-
+
+      - name: Зависимости
+        run: poetry install --no-interaction --no-root
+
+      - name: Black
+        run: poetry run black --check --line-length 120 .
+
+      - name: isort
+        run: poetry run isort --check-only --profile black --line-length 120 .
+
+      # Исключения те же, что в .pre-commit-config.yaml. Без .venv в списке
+      # flake8 обходит локально созданное окружение и выдаёт тысячи замечаний
+      # к чужим пакетам.
+      - name: Flake8
+        run: >-
+          poetry run flake8 . --count --max-line-length=120 --statistics
+          --ignore=E203,W503,E501
+          --exclude=migrations,.venv,venv,__pycache__,htmlcov
+
+      # Системные проверки Django: ловят неверные настройки и битые модели.
+      - name: Проверки Django
+        run: poetry run python manage.py check --settings=config.settings_ci
+
+      # Незакоммиченная миграция означает, что на сервере схема разъедется с
+      # кодом: приложение поднимется и начнёт отвечать 500 на новых полях.
+      - name: Миграции полны
+        run: poetry run python manage.py makemigrations --check --dry-run --settings=config.settings_ci
+
+      # Опубликованная схема API обязана совпадать с кодом: иначе документация
+      # расходится с реальностью и по ней нельзя генерировать клиентов.
+      # Сравниваются разобранные структуры, а не байты: генератор не ставит
+      # завершающий перевод строки, а pre-commit его в файл добавляет.
+      - name: Схема API актуальна
+        run: |
+          poetry run python manage.py spectacular --file /tmp/openapi.json \
+            --format openapi-json --settings=config.settings_ci
+          poetry run python - <<'PY'
+          import json
+          import sys
+
+          committed = json.load(open("docs/api/openapi.json"))
+          generated = json.load(open("/tmp/openapi.json"))
+          if committed != generated:
+              print("Схема API разошлась с кодом.")
+              print("Пересоберите: manage.py spectacular --file docs/api/openapi.json --format openapi-json")
+              sys.exit(1)
+          print("Схема API совпадает с кодом")
+          PY
+
+      - name: Тесты
+        run: poetry run pytest --no-cov -q

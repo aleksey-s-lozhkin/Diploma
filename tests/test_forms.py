@@ -84,11 +84,15 @@ class PasswordResetRequestFormTest(TestCase):
         form = PasswordResetRequestForm(data={"email": "test@example.com"})
         self.assertTrue(form.is_valid())
 
-    def test_nonexistent_email(self):
-        """Email не найден"""
+    def test_nonexistent_email_is_accepted(self):
+        """Несуществующий адрес не отвергается
+
+        Иначе по тексту ошибки можно перебором выяснить, кто зарегистрирован.
+        Представление отвечает одинаково для любого адреса — форма не должна
+        это выдавать.
+        """
         form = PasswordResetRequestForm(data={"email": "nonexistent@example.com"})
-        self.assertFalse(form.is_valid())
-        self.assertIn("email", form.errors)
+        self.assertTrue(form.is_valid(), form.errors)
 
 
 class PasswordResetConfirmFormTest(TestCase):

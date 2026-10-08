@@ -1,38 +1,11 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.db import connections
-from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-from elasticsearch_dsl.connections import connections as es_connections
 
-
-def health_check(request):
-    """Проверка состояния всех сервисов (PostgreSQL, Elasticsearch)"""
-    status = {"status": "ok", "checks": {}}
-    http_status = 200
-
-    # Проверка PostgreSQL
-    try:
-        connections["default"].ensure_connection()
-    except Exception as e:
-        status["status"] = "warning"
-        status["database"] = str(e)
-        http_status = 503
-
-    # Проверка Elasticsearch
-    try:
-        es = es_connections.get_connection()
-        es.info()
-    except Exception as e:
-        status["status"] = "warning"
-        status["elasticsearch"] = str(e)
-        http_status = 503
-
-    return JsonResponse(status, status=http_status)
-
+from config.health import liveness, readiness
 
 urlpatterns = [
     # API документация Swagger
@@ -40,7 +13,9 @@ urlpatterns = [
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     # Стандартные маршруты
     path("admin/", admin.site.urls),
-    path("health/", health_check, name="health_check"),
+    # Healthcheck: liveness — жив ли процесс, readiness — готов ли он к трафику
+    path("health/", liveness, name="health_liveness"),
+    path("health/ready/", readiness, name="health_readiness"),
     # REST API
     path("api/", include("documents.urls.urls_api")),
     path("api/", include("users.urls.urls_api")),
