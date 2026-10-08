@@ -19,6 +19,7 @@ from django.dispatch import receiver
 from .documents import DocumentIndex
 from .models import Document
 from .rubrics import invalidate_rubrics_cache
+from .services.chunk_service import delete_document_chunks, index_document_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,15 @@ def index_document(sender, instance, **kwargs):
     """Индексирует документ после коммита и сбрасывает кэш рубрик владельца."""
     document_id = instance.pk
     user_id = instance.user_id
-    transaction.on_commit(lambda: (_index_document(document_id), invalidate_rubrics_cache(user_id)))
+    # Куски переиндексируются вместе с документом: изменился текст — изменились
+    # и отрывки, по которым ищут потребители (docs/SEARCH-CONTRACT.md).
+    transaction.on_commit(
+        lambda: (
+            _index_document(document_id),
+            index_document_chunks(document_id),
+            invalidate_rubrics_cache(user_id),
+        )
+    )
 
 
 @receiver(post_delete, sender=Document)
@@ -71,4 +80,10 @@ def delete_document(sender, instance, **kwargs):
     """
     document_id = instance.pk
     user_id = instance.user_id
-    transaction.on_commit(lambda: (_delete_from_index(document_id), invalidate_rubrics_cache(user_id)))
+    transaction.on_commit(
+        lambda: (
+            _delete_from_index(document_id),
+            delete_document_chunks(document_id),
+            invalidate_rubrics_cache(user_id),
+        )
+    )

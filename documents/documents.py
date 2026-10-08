@@ -1,5 +1,8 @@
 from django_elasticsearch_dsl import Document, Index, fields
-from elasticsearch_dsl import analyzer, token_filter
+from elasticsearch_dsl import Boolean
+from elasticsearch_dsl import Document as EsDocument
+from elasticsearch_dsl import Index as EsIndex
+from elasticsearch_dsl import Integer, Keyword, Text, analyzer, token_filter
 
 from .models import Document as DocumentModel
 
@@ -93,3 +96,52 @@ class DocumentIndex(Document):
     def prepare_created_date(self, instance):
         """Извлекаем дату создания"""
         return instance.created_date
+
+
+# --- Индекс кусков ---------------------------------------------------------
+#
+# Куски не являются моделью Django, поэтому индекс описан обычным
+# elasticsearch_dsl: реестру django-elasticsearch-dsl нужна модель, а кусок
+# живёт только в Elasticsearch и в любой момент пересобирается из текста
+# документа (documents/services/chunk_service.py).
+
+#: Тот же анализатор, что у документов: поиск по кускам должен находить русские
+#: словоформы так же, как поиск по целым документам.
+MULTILINGUAL_ANALYSIS = {
+    "analyzer": {
+        "multilingual_analyzer": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase", "russian_stop", "english_stop", "russian_stemmer", "english_stemmer"],
+        }
+    },
+    "filter": {
+        "russian_stop": {"type": "stop", "stopwords": "_russian_"},
+        "english_stop": {"type": "stop", "stopwords": "_english_"},
+        "russian_stemmer": {"type": "stemmer", "language": "russian"},
+        "english_stemmer": {"type": "stemmer", "language": "english"},
+    },
+}
+
+chunks_index = EsIndex("chunks")
+chunks_index.settings(
+    number_of_shards=1,
+    number_of_replicas=0,
+    analysis=MULTILINGUAL_ANALYSIS,
+)
+
+
+@chunks_index.document
+class ChunkIndex(EsDocument):
+    """Один кусок документа: то, что отдаётся потребителю в ответе поиска."""
+
+    document_id = Integer()
+    chunk_index = Integer()
+    chunk_total = Integer()
+    #: Отпечаток содержимого документа: по нему видно, что отрывок устарел.
+    document_version = Keyword()
+    title = Text(analyzer="multilingual_analyzer")
+    text = Text(analyzer="multilingual_analyzer")
+    rubrics = Text(analyzer="standard")
+    is_public = Boolean()
+    user_id = Integer()

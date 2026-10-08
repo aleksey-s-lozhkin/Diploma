@@ -188,3 +188,33 @@ docs/              документация
 | `docker-compose.dev.yml` | локальная разработка: PostgreSQL, Redis и Elasticsearch с портами на хост, приложение можно запускать через `runserver` |
 | `docker-compose.yml` | прод-подобный локальный запуск: всё внутри контейнеров, вход через nginx |
 | `docker-compose.prod.yml` | сервер: копируется в `/srv/compose/diploma/compose.yaml`, портов не публикует |
+
+## Поиск отрывков для потребителей
+
+`POST /api/v1/search/retrieve` — поиск по отрывкам документов для Семёна и
+лаптя. Форма зафиксирована в [docs/SEARCH-CONTRACT.md](docs/SEARCH-CONTRACT.md).
+
+```bash
+# Служебный токен: видит только публичные документы
+poetry run python manage.py issue_api_token --name semen --scope service
+
+# Персональный: документы указанного пользователя и публичные
+poetry run python manage.py issue_api_token --name lapot --scope personal --email user@example.com
+
+poetry run python manage.py issue_api_token --list          # список и последнее использование
+poetry run python manage.py issue_api_token --revoke 3      # отозвать
+```
+
+```bash
+curl -X POST https://docsearch.pyconstrictor.ru/api/v1/search/retrieve \
+  -H "Authorization: Bearer ds_s_..." -H "Content-Type: application/json" \
+  -d '{"query": "как деплоить проект", "limit": 10, "rubrics": ["devops"]}'
+```
+
+Ответ: `{"results": [{"document_id", "chunk_index", "chunk_total", "document_version",
+"title", "text", "score", "rubrics", "is_public"}], "source": "fulltext"}`.
+
+Пустой `results` при 200 — это «не нашлось», а не ошибка: потребитель обязан
+ответить человеку, что материала нет, а не отвечать по памяти модели. `503` —
+поиск недоступен. Индекс отрывков пересобирается командой
+`poetry run python manage.py reindex_chunks`.
