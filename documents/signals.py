@@ -1,6 +1,6 @@
-"""Синхронизация документов с Elasticsearch.
+"""Синхронизация документов с Elasticsearch и сброс кэша рубрик.
 
-Индексация — вспомогательная операция: отказ Elasticsearch или Redis не должен
+Индексация — вспомогательная операция: отказ Elasticsearch не должен
 превращаться в ошибку сохранения документа. Поэтому каждый шаг здесь обёрнут в
 try/except, а работа отложена до коммита транзакции: индексировать то, что ещё
 может откатиться, бессмысленно.
@@ -12,28 +12,15 @@ documents/documents.py), иначе библиотека пишет в ES пар
 
 import logging
 
-from django.core.cache import cache
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from .documents import DocumentIndex
 from .models import Document
+from .rubrics import invalidate_rubrics_cache
 
 logger = logging.getLogger(__name__)
-
-
-def invalidate_user_cache(user_id):
-    """Сбрасывает кэш, который мог устареть после изменения документа.
-
-    Кэш — ускоритель, поэтому его недоступность не должна ломать запрос:
-    неудачная очистка приводит лишь к тому, что данные обновятся по TTL.
-    """
-    try:
-        cache.delete_pattern("*rubrics*")
-        cache.delete_pattern(f"*dashboard*user_{user_id}*")
-    except Exception:
-        logger.warning("Не удалось сбросить кэш пользователя %s", user_id, exc_info=True)
 
 
 def _index_document(document_id):
@@ -69,23 +56,19 @@ def _delete_from_index(document_id):
 
 @receiver(post_save, sender=Document)
 def index_document(sender, instance, **kwargs):
-    """Индексирует документ после коммита и сбрасывает кэш владельца.
-
-    Кэш рубрик и главной страницы зависит от набора документов, поэтому его
-    тоже нужно обновлять — но только после успешного коммита.
-    """
+    """Индексирует документ после коммита и сбрасывает кэш рубрик владельца."""
     document_id = instance.pk
     user_id = instance.user_id
-    transaction.on_commit(lambda: (_index_document(document_id), invalidate_user_cache(user_id)))
+    transaction.on_commit(lambda: (_index_document(document_id), invalidate_rubrics_cache(user_id)))
 
 
 @receiver(post_delete, sender=Document)
 def delete_document(sender, instance, **kwargs):
-    """Убирает документ из индекса и сбрасывает кэш владельца.
+    """Убирает документ из индекса и сбрасывает кэш рубрик владельца.
 
-    Идентификатор и владелец запоминаются здесь: Django обнуляет pk сразу после
-    отправки post_delete, поэтому в отложенном вызове instance.pk уже None.
+    Идентификаторы запоминаются здесь: Django обнуляет pk сразу после отправки
+    post_delete, поэтому в отложенном вызове instance.pk уже None.
     """
     document_id = instance.pk
     user_id = instance.user_id
-    transaction.on_commit(lambda: (_delete_from_index(document_id), invalidate_user_cache(user_id)))
+    transaction.on_commit(lambda: (_delete_from_index(document_id), invalidate_rubrics_cache(user_id)))

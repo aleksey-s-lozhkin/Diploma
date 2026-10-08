@@ -132,6 +132,7 @@ class SearchService:
         save_history: bool = True,
         with_highlights: bool = True,
         with_truncation: bool = True,
+        sort: str = "relevance",
     ) -> SearchResponse:
         """
         Выполняет поиск документов по заданным критериям.
@@ -145,6 +146,9 @@ class SearchService:
             save_history: Сохранять ли запрос в историю
             with_highlights: Включать ли подсветку фрагментов
             with_truncation: Обрезать ли длинный текст
+            sort: relevance | date | date_asc. Сортировка выполняется
+                Elasticsearch, а не списком результатов в Python: иначе
+                упорядочивалась бы только текущая страница
 
         Возвращает:
             SearchResponse с результатами и метаинформацией
@@ -162,6 +166,14 @@ class SearchService:
 
         # Построение и выполнение запроса
         s = self.build_query(query, rubric, privacy)
+
+        if sort == "date":
+            s = s.sort("-created_date")
+        elif sort == "date_asc":
+            s = s.sort("created_date")
+        else:
+            s = s.sort("_score")
+
         s = s[start : start + page_size]
 
         # Добавляем highlighting для подсветки совпадений

@@ -27,19 +27,6 @@ class Document(models.Model):
     def __str__(self):
         return f"Document #{self.id}"
 
-    def __init__(self, *args, **kwargs):
-        """Сохраняем исходное состояние is_public для отслеживания изменений"""
-        super().__init__(*args, **kwargs)
-        if hasattr(self, "is_public"):
-            self._original_is_public = self.is_public
-        else:
-            self._original_is_public = False
-
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        # Обновляем исходное состояние после сохранения
-        self._original_is_public = self.is_public
-
 
 class SearchHistory(models.Model):
     """Модель истории поисковых запросов пользователя"""

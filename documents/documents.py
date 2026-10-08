@@ -24,7 +24,9 @@ russian_analyzer = analyzer(
 index = Index("documents")
 index.settings(
     number_of_shards=1,
-    number_of_replicas=1,
+    # Реплика на однонодовом кластере держит здоровье индекса в yellow всегда:
+    # разместить её негде. Вернуть 1 вместе со вторым узлом Elasticsearch.
+    number_of_replicas=0,
     analysis={
         "analyzer": {
             "multilingual_analyzer": {

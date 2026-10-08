@@ -115,9 +115,9 @@ class RedisOutageTest(TestCase):
 
     def test_cache_invalidation_failure_does_not_break_save(self):
         broken_cache = mock.Mock()
-        broken_cache.delete_pattern.side_effect = ConnectionError("Redis недоступен")
+        broken_cache.delete.side_effect = ConnectionError("Redis недоступен")
 
-        with mock.patch("documents.signals.cache", broken_cache):
+        with mock.patch("documents.rubrics.cache", broken_cache):
             with self.captureOnCommitCallbacks(execute=True):
                 document = Document.objects.create(user=self.user, rubrics=[], text="текст")
 

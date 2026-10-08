@@ -108,7 +108,21 @@ class DocumentSerializerTest(TestCase):
         """Проверка полей сериализатора DocumentSerializer"""
         serializer = DocumentSerializer(self.document)
         data = serializer.data
-        expected_fields = {"id", "rubrics", "text", "created_date", "is_public", "user_email", "user_id"}
+        expected_fields = {
+            "id",
+            "rubrics",
+            "text",
+            "created_date",
+            "is_public",
+            # Поля загруженного файла добавлены: клиент API должен видеть, из
+            # какого файла получен документ и где его скачать.
+            "file",
+            "file_name",
+            "file_type",
+            "text_source",
+            "user_email",
+            "user_id",
+        }
         self.assertEqual(set(data.keys()), expected_fields)
 
 
@@ -124,12 +138,23 @@ class DocumentCreateUpdateSerializerTest(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("text", serializer.errors)
 
-    def test_validate_rubrics_not_list(self):
-        """Рубрики должны быть списком"""
+    def test_validate_rubrics_from_comma_separated_string(self):
+        """Строка через запятую допустима: так рубрики приходят из web-формы"""
         serializer = DocumentCreateUpdateSerializer(
             data={
                 "text": "test",
-                "rubrics": "not a list",
+                "rubrics": "python, django",
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["rubrics"], ["python", "django"])
+
+    def test_validate_rubrics_wrong_type(self):
+        """Ни список, ни строка — ошибка"""
+        serializer = DocumentCreateUpdateSerializer(
+            data={
+                "text": "test",
+                "rubrics": {"python": True},
             }
         )
         self.assertFalse(serializer.is_valid())

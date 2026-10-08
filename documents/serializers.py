@@ -2,10 +2,8 @@ import re
 
 from rest_framework import serializers
 
+from .constants import MAX_TEXT_LENGTH, DocumentValidationError, normalize_rubrics
 from .models import Document, SearchHistory
-
-# Константа для максимальной длины текста
-MAX_TEXT_LENGTH = 100000
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -16,8 +14,31 @@ class DocumentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Document
-        fields = ["id", "rubrics", "text", "created_date", "is_public", "user_email", "user_id"]
-        read_only_fields = ["id", "created_date", "user_email", "user_id"]
+        fields = [
+            "id",
+            "rubrics",
+            "text",
+            "created_date",
+            "is_public",
+            # Поля загруженного файла раньше не отдавались: клиент не мог узнать,
+            # из какого файла получен документ и как его скачать.
+            "file",
+            "file_name",
+            "file_type",
+            "text_source",
+            "user_email",
+            "user_id",
+        ]
+        read_only_fields = [
+            "id",
+            "created_date",
+            "file",
+            "file_name",
+            "file_type",
+            "text_source",
+            "user_email",
+            "user_id",
+        ]
 
 
 class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
@@ -42,21 +63,11 @@ class DocumentCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_rubrics(self, value):
-        """Валидация рубрик: тип, количество и длина каждой рубрики"""
-        if not isinstance(value, list):
-            raise serializers.ValidationError("Рубрики должны быть списком")
-
-        if len(value) > 10:
-            raise serializers.ValidationError("Не более 10 рубрик")
-
-        # Дополнительная валидация каждой рубрики
-        for rubric in value:
-            if not isinstance(rubric, str):
-                raise serializers.ValidationError("Рубрики должны быть строками")
-            if len(rubric) > 100:
-                raise serializers.ValidationError("Рубрика не длиннее 100 символов")
-
-        return value
+        """Валидация рубрик общими правилами из documents/constants.py"""
+        try:
+            return normalize_rubrics(value)
+        except DocumentValidationError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
 
 class SearchHistorySerializer(serializers.ModelSerializer):

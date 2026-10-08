@@ -1,3 +1,5 @@
+"""Извлечение и очистка текста документов."""
+
 import logging
 import re
 
@@ -29,21 +31,51 @@ def clean_extracted_text(text):
     return text.strip()
 
 
-def extract_text_from_file(file_path, file_type):
-    """Извлекает текст из файла в зависимости от его типа. PDF, DOCX, XLSX, TXT"""
+def _rewind(source):
+    """Возвращает указатель в начало, если source — файловый объект.
+
+    Тот же объект дальше сохраняется Django как файл документа, поэтому оставлять
+    его прочитанным нельзя: записался бы пустой файл.
+    """
+    seek = getattr(source, "seek", None)
+    if callable(seek):
+        try:
+            seek(0)
+        except (OSError, ValueError):
+            logger.warning("Не удалось вернуть указатель файла в начало", exc_info=True)
+
+
+def _read_text(source):
+    """Читает txt из пути или из файлового объекта."""
+    if hasattr(source, "read"):
+        data = source.read()
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return data
+    with open(source, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+def extract_text_from_file(source, file_type):
+    """Извлекает текст из файла в зависимости от его типа. PDF, DOCX, XLSX, TXT.
+
+    ``source`` — путь к файлу или файловый объект. Работа с объектом позволяет
+    извлечь текст из загруженного файла до его сохранения: раньше документ
+    сохранялся дважды — сначала пустой, потом с текстом, прочитанным обратно с
+    диска по пути MEDIA_ROOT.
+    """
     text = ""
 
     try:
         if file_type == "pdf":
-            with open(file_path, "rb") as f:
-                reader = pypdf.PdfReader(f)
-                for page in reader.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
+            reader = pypdf.PdfReader(source)
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
 
         elif file_type == "docx":
-            doc = DocxDocument(file_path)
+            doc = DocxDocument(source)
             for para in doc.paragraphs:
                 text += para.text + "\n"
             for table in doc.tables:
@@ -53,19 +85,23 @@ def extract_text_from_file(file_path, file_type):
                     text += "\n"
 
         elif file_type == "xlsx":
-            wb = load_workbook(file_path, data_only=True)
+            wb = load_workbook(source, data_only=True)
             for sheet in wb.worksheets:
                 for row in sheet.iter_rows(values_only=True):
                     text += " ".join([str(cell) for cell in row if cell]) + "\n"
 
         elif file_type == "txt":
-            with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read()
+            text = _read_text(source)
+
+        else:
+            logger.warning("Извлечение текста для типа %s не поддерживается", file_type)
+            return ""
 
     except Exception as e:
-        logger.error(f"Error extracting text from {file_path}: {e}", exc_info=True)
+        logger.error(f"Error extracting text from {source}: {e}", exc_info=True)
         return ""
 
-    text = clean_extracted_text(text)
+    finally:
+        _rewind(source)
 
-    return text
+    return clean_extracted_text(text)
