@@ -56,8 +56,20 @@ class DocumentIndex(Document):
     class Django:
         model = DocumentModel
         fields = ["id"]
-        related_models = ["user"]
-        ignore_signals = False
+
+        # Автоматические сигналы django-elasticsearch-dsl пишут в Elasticsearch
+        # без обработки ошибок: недоступный ES выбрасывал исключение прямо из
+        # Document.save(), и создание документа отвечало 500, хотя строка в
+        # PostgreSQL уже была вставлена. Индексация вынесена в
+        # documents/signals.py: там ошибки логируются и наружу не уходят,
+        # потому что поиск — ускоритель, а не источник правды.
+        ignore_signals = True
+
+        # related_models намеренно не указан. Строка вместо класса модели
+        # (было ["user"]) никогда не совпадает с instance.__class__ и молча
+        # ничего не делает, а настоящий класс модели без
+        # get_instances_from_related() ронял бы user.save() с
+        # NotImplementedError при каждом входе и подтверждении почты.
         auto_refresh = True
 
     def get_queryset(self):

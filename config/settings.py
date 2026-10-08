@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Безопасность
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-default-key-for-dev")
-DEBUG = os.getenv("DEBUG", "True") == "True"
+DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Кастомная модель пользователя и бэкенд аутентификации по email
@@ -88,8 +88,20 @@ DATABASES = {
 
 # Elasticsearch для полнотекстового поиска
 ELASTICSEARCH_DSL = {
-    "default": {"hosts": f"http://{os.getenv('ELASTICSEARCH_HOST', 'localhost')}:9200"},
+    "default": {
+        "hosts": (f"http://{os.getenv('ELASTICSEARCH_HOST', 'localhost')}:{os.getenv('ELASTICSEARCH_PORT', '9200')}"),
+        # Короткий таймаут и одна попытка: поиск не должен держать запрос, а
+        # недоступный ES не должен влиять на сохранение документов.
+        "timeout": 5,
+        "max_retries": 1,
+        "retry_on_timeout": False,
+    },
 }
+
+# Автоматические сигналы django-elasticsearch-dsl пишут в ES без обработки
+# ошибок и тем самым роняют Document.save(). Индексация выполняется в
+# documents/signals.py через transaction.on_commit и ошибок не пробрасывает.
+ELASTICSEARCH_DSL_AUTOSYNC = False
 
 # Redis (кеширование и очереди)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -257,6 +269,9 @@ CACHES = {
             "SOCKET_CONNECT_TIMEOUT": 5,
             "SOCKET_TIMEOUT": 5,
             "RETRY_ON_TIMEOUT": True,
+            # Кэш — ускоритель, а не источник правды: при недоступном Redis
+            # запросы продолжают обслуживаться, а не отвечают 500.
+            "IGNORE_EXCEPTIONS": True,
         },
     }
 }
