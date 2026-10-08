@@ -11,7 +11,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.cache import never_cache
 from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
-from elasticsearch.exceptions import ConnectionError, NotFoundError
+from elasticsearch.exceptions import NotFoundError, TransportError
 
 from documents.constants import (
     MAX_TEXT_LENGTH,
@@ -150,27 +150,25 @@ class SearchResultsView(View):
                     "sort": sort_by,
                 },
             )
-        except ConnectionError as e:
-            logger.warning(f"Elasticsearch connection failed for user {user_id}: {e}")
-            return render(
-                request,
-                "partials/search_results.html",
-                {
-                    "results": [],
-                    "query": query,
-                    "error": "🔍 Поиск временно недоступен. Пожалуйста, попробуйте позже.",
-                },
-            )
+        except TransportError as e:
+            # Любая ошибка Elasticsearch: недоступен, отказал в доступе, не нашёл
+            # индекс, ответил 429. Раньше ловились только ConnectionError и
+            # NotFoundError, а остальные — например 401 при включённой
+            # безопасности — давали 500.
+            if isinstance(e, NotFoundError):
+                logger.error("Индекс 'documents' не найден: %s", e)
+                message = "⚙️ Ошибка конфигурации поиска. Администратор уже уведомлён."
+            else:
+                logger.warning("Elasticsearch недоступен для пользователя %s: %s", user_id, e)
+                message = "🔍 Поиск временно недоступен. Пожалуйста, попробуйте позже."
 
-        except NotFoundError as e:
-            logger.error(f"Elasticsearch index 'documents' not found: {e}")
             return render(
                 request,
                 "partials/search_results.html",
                 {
                     "results": [],
                     "query": query,
-                    "error": "⚙️ Ошибка конфигурации поиска. Администратор уже уведомлён.",
+                    "error": message,
                 },
             )
 

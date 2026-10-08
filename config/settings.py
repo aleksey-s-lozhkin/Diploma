@@ -197,15 +197,15 @@ if not DEBUG:
 # CORS НАСТРОЙКИ
 # =====================
 
-# Разрешенные источники (домены/URL)
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
-
-# В продакшене разрешаем только реальные домены
-if not DEBUG:
-    CORS_ALLOWED_ORIGINS = [
-        "https://pyconstrictor.ru",
-        "https://www.pyconstrictor.ru",
-    ]
+# Источники, которым разрешено обращаться к API кросс-доменно. Это origin
+# вызывающего, а не наш домен: собственный веб-интерфейс работает с того же
+# origin и в CORS не нуждается. Читается из окружения — раньше в продакшене
+# список молча подменялся захардкоженным, и переменная из .env не действовала.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+    if origin.strip()
+]
 
 # Разрешить отправку credentials (cookies, токены)
 CORS_ALLOW_CREDENTIALS = True

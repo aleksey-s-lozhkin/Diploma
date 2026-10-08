@@ -263,7 +263,48 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 быть совместимы с предыдущей версией: сначала добавление полей и таблиц, удаление
 старых — отдельным релизом.
 
-## 8. Продление сертификата
+## 8. Аварийный деплой без CI
+
+Если CI недоступен, а исправление нужно на сервере немедленно, образ можно
+собрать на самом хосте. Это отступление от конвенции (обычно образ собирает CI, а
+сервер только загружает готовый), поэтому образ помечается SHA коммита и тег
+`latest` не затирает.
+
+```bash
+cd /srv/compose/diploma
+commit=<нужный коммит>
+
+rm -rf /tmp/diploma-build
+git clone --quiet --branch "$commit" --depth 1 \
+  https://github.com/aleksey-s-lozhkin/Diploma.git /tmp/diploma-build
+docker build --tag "alserloz/diploma:$commit" /tmp/diploma-build
+
+# Запоминаем работающий образ, чтобы было куда вернуться
+docker image tag "$(docker inspect --format '{{.Config.Image}}' diploma-web)" alserloz/diploma:rollback
+
+DIPLOMA_IMAGE="alserloz/diploma:$commit" docker compose -f compose.yaml up -d --no-build --remove-orphans
+
+for attempt in $(seq 1 90); do
+  [ "$(docker inspect --format '{{.State.Health.Status}}' diploma-web 2>/dev/null)" = healthy ] && break
+  sleep 2
+done
+docker inspect --format '{{json .State.Health}}' diploma-web
+docker exec nginx nginx -t && docker exec nginx nginx -s reload
+rm -rf /tmp/diploma-build
+```
+
+Откат — тот же тег `rollback`:
+
+```bash
+DIPLOMA_IMAGE=alserloz/diploma:rollback docker compose -f compose.yaml up -d --no-build --remove-orphans
+```
+
+Сборку можно проверить, не трогая работающий контейнер: собрать с другим тегом,
+прогнать в нём `python manage.py migrate --check` и запустить на свободном порту
+вида `-p 127.0.0.1:18000:8000`, чтобы посмотреть `/health/ready/`. Именно так
+проверялся образ перед первым деплоем.
+
+## 9. Продление сертификата
 
 Продлением занимается задание в crontab пользователя деплоя (дважды в день,
 certbot обращается к Let's Encrypt только если до истечения меньше 30 дней):

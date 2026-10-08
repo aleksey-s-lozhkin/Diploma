@@ -2,6 +2,7 @@ import logging
 
 from django.db.models import Q
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from elasticsearch.exceptions import TransportError
 from rest_framework import permissions, status, viewsets
 from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -71,17 +72,25 @@ class SearchView(APIView):
         if not query:
             return Response({"error": "Query parameter 'query' required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Используем сервис поиска
-        service = SearchService(request.user)
-        search_response = service.search(
-            query=query,
-            rubric=rubric,
-            privacy=privacy,
-            page=page,
-            save_history=True,
-            with_highlights=False,
-            with_truncation=True,
-        )
+        # Используем сервис поиска. Отказ Elasticsearch не должен выглядеть как
+        # внутренняя ошибка: для клиента это временная недоступность сервиса.
+        try:
+            service = SearchService(request.user)
+            search_response = service.search(
+                query=query,
+                rubric=rubric,
+                privacy=privacy,
+                page=page,
+                save_history=True,
+                with_highlights=False,
+                with_truncation=True,
+            )
+        except TransportError as exc:
+            logger.warning("Поиск недоступен (пользователь %s): %s", user_id, exc)
+            return Response(
+                {"error": "Поиск временно недоступен. Попробуйте позже."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         total_pages = search_response.total_pages
 
