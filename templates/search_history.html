@@ -1,97 +1,73 @@
 {% extends 'base.html' %}
+{% load ui %}
 
 {% block title %}История поиска{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>📜 История поиска</h1>
-        <form method="post" action="{% url 'clear_history' %}" class="d-inline">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-danger" onclick="return confirm('Очистить всю историю?')">
-                🗑️ Очистить историю
-            </button>
-        </form>
-    </div>
-
-    {% if history %}
-        <div class="table-responsive">
-            <table class="table table-hover shadow-sm">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Запрос</th>
-                        <th>Результатов</th>
-                        <th>Дата и время</th>
-                        <th>Действие</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in history %}
-                    <tr>
-                        <td>
-                            <a href="/?query={{ item.query|urlencode }}" class="text-decoration-none">
-                                🔍 {{ item.query }}
-                            </a>
-                        </td>
-                        <td>{{ item.results_count }}</td>
-                        <td>{{ item.created_at|date:"d.m.Y H:i:s" }}</td>
-                        <td>
-                            <form method="post" action="{% url 'delete_history_item' item.id %}" class="d-inline">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить этот запрос?')">
-                                    🗑️
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Пагинация -->
-        {% if history.has_other_pages %}
-        <nav aria-label="Page navigation" class="mt-4">
-            <ul class="pagination justify-content-center">
-                {% if history.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ history.previous_page_number }}">← Предыдущая</a>
-                </li>
-                {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link">← Предыдущая</span>
-                </li>
-                {% endif %}
-
-                {% for num in history.paginator.page_range %}
-                    {% if history.number == num %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ num }}</span>
-                    </li>
-                    {% elif num > history.number|add:'-3' and num < history.number|add:'3' %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}">{{ num }}</a>
-                    </li>
-                    {% endif %}
-                {% endfor %}
-
-                {% if history.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ history.next_page_number }}">Следующая →</a>
-                </li>
-                {% else %}
-                <li class="page-item disabled">
-                    <span class="page-link">Следующая →</span>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
-        {% endif %}
-
-    {% else %}
-        <div class="alert alert-info">
-            История поиска пуста. Выполните несколько поисковых запросов, и они появятся здесь.
-        </div>
-    {% endif %}
+<div class="head">
+    <h1 style="margin:0">История поиска</h1>
+    <form method="post" action="{% url 'clear_history' %}">
+        {% csrf_token %}
+        <button type="submit" class="button ghost small"
+                onclick="return confirm('Очистить всю историю поиска?')">
+            {% icon "trash" 16 %} Очистить
+        </button>
+    </form>
 </div>
+
+{% if history %}
+    <ul class="list">
+        {% for item in history %}
+            <li class="item">
+                <div class="body">
+                    <a class="title" href="{% url 'index' %}?query={{ item.query|urlencode }}">{% icon "search" 16 %} {{ item.query }}</a>
+                    <div class="counts">
+                        <span class="count">{{ item.results_count }} найдено</span>
+                        <span class="count">{{ item.created_at|date:"d.m.Y H:i" }}</span>
+                    </div>
+                </div>
+                <div class="tools">
+                    {# hx-swap="delete" убирает саму строку: ответ представления — #}
+                    {# JSON для внешних клиентов, и подставлять его в список нельзя. #}
+                    <button type="button" class="iconbtn danger"
+                            title="Удалить запись" aria-label="Удалить запись"
+                            hx-post="{% url 'delete_history_item' item.id %}"
+                            hx-target="closest li"
+                            hx-swap="delete"
+                            hx-confirm="Удалить этот запрос из истории?">
+                        {% icon "trash" 20 %}
+                    </button>
+                </div>
+            </li>
+        {% endfor %}
+    </ul>
+
+    {% if history.has_other_pages %}
+        <nav class="pagination" aria-label="Страницы">
+            {% if history.has_previous %}
+                <a class="button small" href="?page={{ history.previous_page_number }}"
+                   aria-label="Предыдущая страница">{% icon "chevron-left" 18 %}</a>
+            {% endif %}
+
+            {% for num in history.paginator.page_range %}
+                {% if history.number == num %}
+                    <span class="is-current">{{ num }}</span>
+                {% elif num > history.number|add:'-3' and num < history.number|add:'3' %}
+                    <a class="button small" href="?page={{ num }}">{{ num }}</a>
+                {% endif %}
+            {% endfor %}
+
+            {% if history.has_next %}
+                <a class="button small" href="?page={{ history.next_page_number }}"
+                   aria-label="Следующая страница">{% icon "chevron-right" 18 %}</a>
+            {% endif %}
+        </nav>
+    {% endif %}
+{% else %}
+    <div class="empty">
+        <p>История поиска пуста.</p>
+        <p class="small">Выполните несколько запросов — они появятся здесь.</p>
+        <p style="margin-top:16px"><a class="button" href="{% url 'index' %}">{% icon "search" 18 %} К поиску</a></p>
+    </div>
+{% endif %}
 {% endblock %}

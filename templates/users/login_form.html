@@ -1,19 +1,29 @@
 <form id="login-form" method="post" hx-post="{% url 'login' %}" hx-target="#login-form" hx-swap="outerHTML">
     {% csrf_token %}
-    <div class="mb-3">
-        <label for="email" class="form-label">Email</label>
-        <input type="email" name="email" id="email" class="form-control" required autofocus>
+    <div class="stack">
+        <div>
+            <label for="email">Email</label>
+            <input type="email" name="email" id="email" required autofocus autocomplete="email">
+        </div>
+        <div>
+            <label for="password">Пароль</label>
+            <input type="password" name="password" id="password" required autocomplete="current-password">
+        </div>
     </div>
-    <div class="mb-3">
-        <label for="password" class="form-label">Пароль</label>
-        <input type="password" name="password" id="password" class="form-control" required>
+
+    <div class="actions">
+        <button type="submit" style="flex:1 1 auto">
+            <span class="spinner htmx-indicator" role="status" aria-label="Проверяем"></span>
+            Войти
+        </button>
     </div>
-    <button type="submit" class="btn btn-primary w-100">Войти</button>
+
+    {# Сообщения живут здесь, а не только в базовом шаблоне: htmx подменяет эту #}
+    {# форму целиком, и ответом приходит только фрагмент — блок из base.html в #}
+    {# него не попадает. #}
     <div id="messages">
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} mt-3">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
+        {% for message in messages %}
+            <div class="flash {{ message.tags }}" style="margin-top:14px">{{ message }}</div>
+        {% endfor %}
     </div>
 </form>
