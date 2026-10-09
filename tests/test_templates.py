@@ -95,3 +95,17 @@ class BrandAndNavigationTest(TestCase):
         self.client.force_login(self.user)
         body = self.client.get(reverse("dashboard")).content.decode()
         self.assertIn("Приватные документы видите только вы", body)
+
+
+class StaticVersionTest(TestCase):
+    """Ссылки на статику уходят с версией.
+
+    Nginx отдаёт статику с кешем на месяц, а имя файла при выпуске не меняется:
+    без версии в адресе человек после выкладки видел бы прежнее оформление.
+    """
+
+    def test_css_and_js_links_carry_version(self):
+        body = self.client.get(reverse("login")).content.decode()
+
+        self.assertRegex(body, r"css/app\.css\?v=\d+")
+        self.assertRegex(body, r"js/htmx\.min\.js\?v=\d+")
