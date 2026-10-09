@@ -30,7 +30,10 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
 
-            if len(fresh) <= len(document.text or ""):
+            # Критерий — «текст изменился», а не «стало длиннее»: хороший текст
+            # бывает короче, когда из него ушёл мусор. Пустым результатом
+            # хороший текст не затираем: это признак сбоя чтения, а не улучшения.
+            if not fresh.strip() or fresh == (document.text or ""):
                 skipped += 1
                 continue
 
