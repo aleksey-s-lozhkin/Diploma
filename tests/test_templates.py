@@ -302,7 +302,12 @@ class SearchResultCardTest(TestCase):
             email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
         )
         self.document = Document.objects.create(
-            user=self.user, text="Договор поставки", rubrics=["право"], file_name="Договор.pdf"
+            user=self.user,
+            text="Договор поставки",
+            rubrics=["право"],
+            file_name="Договор.pdf",
+            summary="Шпаргалка про договоры.",
+            keywords=["право"],
         )
         self.client.force_login(self.user)
 
@@ -328,7 +333,6 @@ class SearchResultCardTest(TestCase):
                         "created_date": self.document.created_date,
                         "is_public": False,
                         "highlights": ["Договор <mark>поставки</mark>"],
-                        "summary": "Шпаргалка про договоры.",
                     }
                 )
             ]
