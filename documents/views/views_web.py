@@ -7,6 +7,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.cache import never_cache
@@ -351,6 +352,23 @@ class SearchHistoryView(View):
         history_list = SearchHistory.objects.filter(user=request.user).order_by("-created_at")
         paginator = Paginator(history_list, page_size)
         history = paginator.get_page(page)
+
+        # Подпись дня считается здесь, а не в шаблоне: «вчера» и «на этой неделе»
+        # зависят от сегодняшней даты, а шаблон её не знает. Список приходит
+        # упорядоченным по убыванию, поэтому одинаковые подписи идут подряд — по
+        # ним шаблон и группирует.
+        today = timezone.localdate()
+        for item in history:
+            day = timezone.localtime(item.created_at).date()
+            days_ago = (today - day).days
+            if days_ago == 0:
+                item.day_label = "Сегодня"
+            elif days_ago == 1:
+                item.day_label = "Вчера"
+            elif days_ago < 7:
+                item.day_label = "На этой неделе"
+            else:
+                item.day_label = day.strftime("%d.%m.%Y")
 
         return render(
             request,

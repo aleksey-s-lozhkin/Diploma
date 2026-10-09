@@ -82,6 +82,14 @@
     <div class="empty">
         <p>Введите запрос — результаты появятся здесь.</p>
         <p class="small">Поиск идёт по тексту ваших документов и по публичным документам других.</p>
+        {% if rubrics %}
+            <p class="small" style="margin-top:16px">Или начните с рубрики:</p>
+            <div class="chips">
+                {% for rubric in rubrics %}
+                    <button type="button" class="chip" data-rubric="{{ rubric }}">{{ rubric }}</button>
+                {% endfor %}
+            </div>
+        {% endif %}
     </div>
 </div>
 </div>
@@ -105,6 +113,18 @@
                 return field && field.value !== defaults[name];
             });
         }
+
+        // Подсказка-чипс выбирает рубрику и сразу запускает поиск: событие
+        // change ловит htmx, как если бы рубрику выбрали руками.
+        document.addEventListener('click', function (event) {
+            var chip = event.target.closest('[data-rubric]');
+            if (!chip) return;
+            var select = document.getElementById('rubric-select');
+            if (!select) return;
+            select.value = chip.dataset.rubric;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            sync();
+        });
 
         form.addEventListener('input', sync);
         form.addEventListener('change', sync);

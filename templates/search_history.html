@@ -16,33 +16,40 @@
 </div>
 
 {% if history %}
-    <ul class="list">
-        {% for item in history %}
-            {# Запрос без результатов бледнее: полезные находки видны сразу. #}
-            <li class="item {% if not item.results_count %}dead{% endif %}">
-                <div class="body">
-                    <a class="title" href="{% url 'index' %}?query={{ item.query|urlencode }}">{% icon "search" 16 %} {{ item.query }}</a>
-                    <div class="counts">
-                        <span class="count">{{ item.results_count }} найдено</span>
-                        <span class="count">{{ item.created_at|date:"d.m.Y H:i" }}</span>
+    {% comment %}
+       Запросы сгруппированы по дням: подряд идущие записи одного дня читаются
+       как лента, а не как сотня одинаковых карточек.
+    {% endcomment %}
+    {% regroup history by day_label as days %}
+    {% for day in days %}
+        <h2 class="day">{{ day.grouper }}</h2>
+        <ul class="list">
+            {% for item in day.list %}
+                {# Запрос без результатов бледнее: полезные находки видны сразу. #}
+                <li class="item {% if not item.results_count %}dead{% endif %}">
+                    <div class="body">
+                        <a class="title" href="{% url 'index' %}?query={{ item.query|urlencode }}">{% icon "search" 16 %} {{ item.query }}</a>
+                        <div class="counts">
+                            <span class="count">{{ item.results_count }} найдено</span>
+                            <span class="count">{{ item.created_at|date:"H:i" }}</span>
+                        </div>
                     </div>
-                </div>
-                <div class="tools">
-                    {# hx-swap="delete" убирает саму строку: ответ представления — #}
-                    {# JSON для внешних клиентов, и подставлять его в список нельзя. #}
-                    <button type="button" class="iconbtn danger"
-                            title="Удалить запись" aria-label="Удалить запись"
-                            hx-post="{% url 'delete_history_item' item.id %}"
-                            hx-target="closest li"
-                            hx-swap="delete"
-                            hx-confirm="Удалить этот запрос из истории?">
-                        {% icon "trash" 20 %}
-                    </button>
-                </div>
-            </li>
-        {% endfor %}
-    </ul>
-
+                    <div class="tools">
+                        {# hx-swap="delete" убирает саму строку: ответ представления — #}
+                        {# JSON для внешних клиентов, и подставлять его в список нельзя. #}
+                        <button type="button" class="iconbtn danger"
+                                title="Удалить запись" aria-label="Удалить запись"
+                                hx-post="{% url 'delete_history_item' item.id %}"
+                                hx-target="closest li"
+                                hx-swap="delete"
+                                hx-confirm="Удалить этот запрос из истории?">
+                            {% icon "trash" 20 %}
+                        </button>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endfor %}
     {% if history.has_other_pages %}
         <nav class="pagination" aria-label="Страницы">
             {% if history.has_previous %}

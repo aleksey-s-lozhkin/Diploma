@@ -7,12 +7,15 @@
 """
 
 import re
+from datetime import timedelta
 from unittest import mock
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from documents.models import Document, SearchHistory
 from documents.services.search_service import SearchService
@@ -349,3 +352,84 @@ class HistoryDimmingTest(TestCase):
 
         body = self.client.get(reverse("search_history")).content.decode()
         self.assertEqual(body.count("item dead"), 1, "пустой запрос не выделен")
+
+
+class DocumentFormTest(TestCase):
+    """Файл и ручной текст — одно поле смысла: при выбранном файле ввод убирается."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.client.force_login(self.user)
+
+    def test_form_has_dropzone(self):
+        body = self.client.get(reverse("document_create")).content.decode()
+
+        self.assertIn('class="dropzone"', body)
+        self.assertIn('id="file-input"', body)
+        self.assertIn('id="manual-text"', body)
+        self.assertIn("Перетащите файл сюда", body)
+
+    def test_drag_and_drop_is_wired(self):
+        """Перетаскивание проверяем по коду: браузера в тестах нет."""
+        body = self.client.get(reverse("document_create")).content.decode()
+
+        self.assertIn("dragover", body)
+        self.assertIn("DataTransfer", body, "файл из перетаскивания не попадёт в поле")
+        self.assertIn('id="clear-file"', body)
+
+    def test_old_warning_about_lost_text_is_gone(self):
+        body = self.client.get(reverse("document_create")).content.decode()
+        self.assertNotIn("вручную введённое не сохранится", body)
+
+
+class SearchHintsTest(TestCase):
+    """Пустое состояние поиска подсказывает рубрики — свои, не выдуманные."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.client.force_login(self.user)
+
+    def test_chips_come_from_the_users_own_rubrics(self):
+        Document.objects.create(user=self.user, text="Договор", rubrics=["право", "договоры"])
+
+        body = self.client.get(reverse("index")).content.decode()
+
+        self.assertIn('data-rubric="право"', body)
+        self.assertIn('data-rubric="договоры"', body)
+
+    def test_no_chips_without_rubrics(self):
+        Document.objects.create(user=self.user, text="Без рубрик", rubrics=[])
+
+        body = self.client.get(reverse("index")).content.decode()
+
+        # Проверяем именно разметку подсказок: строка «data-rubric» есть и в
+        # скрипте-обработчике, который остаётся на странице всегда.
+        self.assertNotIn('class="chip"', body)
+        self.assertNotIn("Или начните с рубрики", body)
+
+
+class HistoryGroupingTest(TestCase):
+    """История читается лентой по дням, а не сотней одинаковых карточек."""
+
+    def test_entries_are_grouped_by_day(self):
+        user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        long_ago = SearchHistory.objects.create(user=user, query="давний", results_count=1)
+        SearchHistory.objects.filter(pk=long_ago.pk).update(created_at=timezone.now() - timedelta(days=10))
+        yesterday = SearchHistory.objects.create(user=user, query="вчерашний", results_count=1)
+        SearchHistory.objects.filter(pk=yesterday.pk).update(created_at=timezone.now() - timedelta(days=1))
+        SearchHistory.objects.create(user=user, query="сегодняшний", results_count=2)
+        self.client.force_login(user)
+
+        body = self.client.get(reverse("search_history")).content.decode()
+
+        self.assertIn("Сегодня", body)
+        self.assertIn("Вчера", body)
+        self.assertRegex(body, r"\d{2}\.\d{2}\.\d{4}", "у старых записей нет даты")
+        self.assertEqual(body.count('class="day"'), 3, "записей трёх дней, а заголовков не три")
