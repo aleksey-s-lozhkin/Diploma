@@ -54,6 +54,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # Версия статики: список здесь свой, поэтому процессор повторяем.
+                "config.context.asset_version",
             ],
         },
     },

@@ -27,11 +27,11 @@
     </script>
 
     <link rel="icon" href="{% static 'images/logo.jpeg' %}">
-    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}?v={{ asset_version }}">
     {% comment %} htmx лежит локально: self-hosted приложение не должно зависеть от чужого
        CDN ни в работе, ни в приватности — запрос к CDN выдаёт, что вы им
        пользуетесь. {% endcomment %}
-    <script src="{% static 'js/htmx.min.js' %}" defer></script>
+    <script src="{% static 'js/htmx.min.js' %}?v={{ asset_version }}" defer></script>
 </head>
 {% comment %} CSRF-токен уезжает в заголовке каждого htmx-запроса. Значение берётся из
    разметки, а не из куки: так схема не зависит от того, доступна ли кука
