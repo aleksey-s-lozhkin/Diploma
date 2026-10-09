@@ -61,9 +61,13 @@
                             {% endif %}
                         </div>
 
-                        <p class="snippet {% if not doc.text %}is-empty{% endif %}">
-                            {% if doc.text %}{{ doc.text|striptags|truncatewords:20 }}{% else %}текст не извлечён{% endif %}
-                        </p>
+                        {% if doc.no_text_layer %}
+                            <p class="snippet is-empty">текст не извлёкся — похоже, это скан без текстового слоя</p>
+                        {% elif doc.text %}
+                            <p class="snippet">{{ doc.text|striptags|truncatewords:20 }}</p>
+                        {% else %}
+                            <p class="snippet is-empty">текст не извлечён</p>
+                        {% endif %}
 
                         <div class="counts">
                             <span class="count">{{ doc.created_date|date:"d.m.Y H:i" }}</span>

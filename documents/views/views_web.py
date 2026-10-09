@@ -16,6 +16,7 @@ from elasticsearch.exceptions import NotFoundError, TransportError
 
 from documents.constants import (
     MAX_TEXT_LENGTH,
+    MIN_EXTRACTED_CHARS,
     DocumentValidationError,
     normalize_rubrics,
     parse_positive_int,
@@ -211,6 +212,11 @@ class DashboardView(View):
 
         paginator = Paginator(documents_list, page_size)
         documents = paginator.get_page(page)
+
+        # Скан без текстового слоя не должен выглядеть как исправный документ:
+        # человек видит «текст не извлёкся», а не пустоту вместо описания.
+        for document in documents:
+            document.no_text_layer = bool(document.file) and len((document.text or "").strip()) < MIN_EXTRACTED_CHARS
 
         total_searches = SearchHistory.objects.filter(user=request.user).count()
 

@@ -4,7 +4,27 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 
+from documents.constants import MIN_EXTRACTED_CHARS
 from documents.utils import extract_text_from_file
+
+
+def pdf_stub(pages_text):
+    """Заглушка pdfplumber: контекстный менеджер со страницами.
+
+    Настоящий PDF в тестах не нужен: проверяем обвязку — что страницы
+    обходятся, текст собирается и очищается.
+    """
+    pages = []
+    for value in pages_text:
+        page = MagicMock()
+        page.extract_text.return_value = value
+        pages.append(page)
+    pdf = MagicMock()
+    pdf.pages = pages
+    manager = MagicMock()
+    manager.__enter__.return_value = pdf
+    manager.__exit__.return_value = False
+    return manager
 
 
 class ExtractTextFromFileTest(TestCase):
@@ -17,11 +37,9 @@ class ExtractTextFromFileTest(TestCase):
             tmp_path = tmp.name
 
         try:
-            with patch("pypdf.PdfReader") as mock_reader:
-                mock_page = MagicMock()
-                mock_page.extract_text.return_value = "Extracted PDF text"
-                mock_reader.return_value.pages = [mock_page, mock_page]
-
+            with patch(
+                "documents.utils.pdfplumber.open", return_value=pdf_stub(["Extracted PDF text", "Extracted PDF text"])
+            ):
                 text = extract_text_from_file(tmp_path, "pdf")
 
                 # Проверяем, что текст извлечён и очищен
@@ -36,12 +54,7 @@ class ExtractTextFromFileTest(TestCase):
             tmp_path = tmp.name
 
         try:
-            with patch("pypdf.PdfReader") as mock_reader:
-                mock_page = MagicMock()
-                # Текст с множественными переносами
-                mock_page.extract_text.return_value = "Line 1\n\n\n\nLine 2"
-                mock_reader.return_value.pages = [mock_page]
-
+            with patch("documents.utils.pdfplumber.open", return_value=pdf_stub(["Line 1\n\n\n\nLine 2"])):
                 text = extract_text_from_file(tmp_path, "pdf")
 
                 # Проверяем, что множественные переносы заменены
@@ -60,9 +73,7 @@ class ExtractTextFromFileTest(TestCase):
             tmp_path = tmp.name
 
         try:
-            with patch("pypdf.PdfReader") as mock_reader:
-                mock_reader.side_effect = Exception("PDF read error")
-
+            with patch("documents.utils.pdfplumber.open", side_effect=Exception("PDF read error")):
                 text = extract_text_from_file(tmp_path, "pdf")
 
                 self.assertEqual(text, "")
@@ -153,3 +164,32 @@ class ExtractTextFromFileTest(TestCase):
         """Файл не найден"""
         text = extract_text_from_file("/nonexistent/path.pdf", "pdf")
         self.assertEqual(text, "")
+
+
+class SourceFilesAndScanTest(TestCase):
+    """Исходники шпаргалок и честная пометка сканов."""
+
+    def _write(self, suffix, content):
+        handle = tempfile.NamedTemporaryFile(suffix=suffix, delete=False, mode="w", encoding="utf-8")
+        handle.write(content)
+        handle.close()
+        return handle.name
+
+    def test_markdown_is_read_as_text(self):
+        path = self._write(".md", "# Заголовок\n\nТекст про FSRS")
+        try:
+            self.assertIn("Текст про FSRS", extract_text_from_file(path, "md"))
+        finally:
+            os.unlink(path)
+
+    def test_python_source_is_read_as_text(self):
+        path = self._write(".py", "def hello():\n    return 'привет'")
+        try:
+            self.assertIn("def hello()", extract_text_from_file(path, "py"))
+        finally:
+            os.unlink(path)
+
+    def test_scan_threshold(self):
+        """Порог, по которому документ считается сканом без текстового слоя."""
+        self.assertEqual(MIN_EXTRACTED_CHARS, 200)
+        self.assertLess(len("# Считаем количество вхождений элемента y"), MIN_EXTRACTED_CHARS)
