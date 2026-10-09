@@ -61,12 +61,20 @@
                             {% endif %}
                         </div>
 
-                        {% if doc.no_text_layer %}
+                        {% if doc.summary %}
+                            <p class="snippet">{{ doc.summary }}</p>
+                        {% elif doc.no_text_layer %}
                             <p class="snippet is-empty">текст не извлёкся — похоже, это скан без текстового слоя</p>
                         {% elif doc.text %}
                             <p class="snippet">{{ doc.text|striptags|truncatewords:20 }}</p>
                         {% else %}
                             <p class="snippet is-empty">текст не извлечён</p>
+                        {% endif %}
+
+                        {% if doc.keywords %}
+                            <div style="margin-top:6px">
+                                {% for tag in doc.keywords %}<span class="tag">#{{ tag }}</span>{% endfor %}
+                            </div>
                         {% endif %}
 
                         <div class="counts">

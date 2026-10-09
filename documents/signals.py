@@ -11,8 +11,9 @@ documents/documents.py), иначе библиотека пишет в ES пар
 """
 
 import logging
+import threading
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
@@ -20,6 +21,7 @@ from .documents import DocumentIndex
 from .models import Document
 from .rubrics import invalidate_rubrics_cache
 from .services.chunk_service import delete_document_chunks, index_document_chunks
+from .services.summary_service import summarize_document
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,7 @@ def index_document(sender, instance, **kwargs):
             _index_document(document_id),
             index_document_chunks(document_id),
             invalidate_rubrics_cache(user_id),
+            _summarize_in_background(document_id),
         )
     )
 
@@ -87,3 +90,25 @@ def delete_document(sender, instance, **kwargs):
             invalidate_rubrics_cache(user_id),
         )
     )
+
+
+def _summarize_in_background(document_id) -> None:
+    """Описание от языковой модели — отдельным потоком.
+
+    Ждать модель 1–5 секунд в ответе на загрузку нельзя, а очередь задач в
+    проекте не поднята. Поток здесь честнее: работа необязательная, её потеря
+    при перезапуске ничего не ломает — команда summarize_documents доберёт.
+    """
+
+    def run():
+        try:
+            document = Document.objects.filter(pk=document_id).first()
+            if document and not document.summary:
+                summarize_document(document)
+        except Exception:
+            logger.warning("Описание для документа %s не получено", document_id, exc_info=True)
+        finally:
+            # Соединение с базой в этом потоке своё — его нужно закрыть.
+            connection.close()
+
+    threading.Thread(target=run, daemon=True).start()
