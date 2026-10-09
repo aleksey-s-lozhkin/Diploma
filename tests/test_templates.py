@@ -433,3 +433,30 @@ class HistoryGroupingTest(TestCase):
         self.assertIn("Вчера", body)
         self.assertRegex(body, r"\d{2}\.\d{2}\.\d{4}", "у старых записей нет даты")
         self.assertEqual(body.count('class="day"'), 3, "записей трёх дней, а заголовков не три")
+
+
+class SearchStateInUrlTest(TestCase):
+    """Возврат по «назад» должен показывать прежние результаты.
+
+    Состояние поиска живёт в адресе: иначе браузер открывает главную без
+    запроса, и поиск приходится повторять руками.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.client.force_login(self.user)
+
+    def test_state_is_kept_in_the_address(self):
+        body = self.client.get(reverse("index")).content.decode()
+
+        self.assertIn("history.pushState", body, "адрес не обновляется — «назад» не вернёт результаты")
+        self.assertIn("history.replaceState", body)
+        self.assertIn("popstate", body, "переходы назад/вперёд не обрабатываются")
+        self.assertIn("htmx.trigger(form, 'submit')", body)
+        self.assertIn("location.search", body, "запрос из адреса не восстанавливается")
+
+    def test_reset_returns_to_clean_address(self):
+        body = self.client.get(reverse("index")).content.decode()
+        self.assertIn("history.pushState(null, '', location.pathname)", body)

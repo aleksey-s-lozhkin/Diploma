@@ -105,8 +105,7 @@
         var defaults = { query: '', rubric: '', privacy: 'all' };
         var fields = function (name) { return form.querySelector('[name="' + name + '"]'); };
 
-        // Кнопка сброса полезна только тогда, когда что-то выбрано: иначе она
-        // занимает место и ничего не делает.
+        // Кнопка сброса полезна только тогда, когда что-то выбрано.
         function sync() {
             button.hidden = !Object.keys(defaults).some(function (name) {
                 var field = fields(name);
@@ -114,28 +113,94 @@
             });
         }
 
-        // Подсказка-чипс выбирает рубрику и сразу запускает поиск: событие
-        // change ловит htmx, как если бы рубрику выбрали руками.
+        // --- Состояние поиска живёт в адресе ---
+        // Иначе по «назад» из карточки документа браузер открывает главную без
+        // запроса, и результаты приходится искать заново. Теперь запрос, рубрика
+        // и доступ уезжают в строку адреса, а при загрузке страницы поиск
+        // повторяется сам.
+        var pushing = false;
+
+        function stateUrl() {
+            var params = new URLSearchParams();
+            Object.keys(defaults).forEach(function (name) {
+                var field = fields(name);
+                if (field && field.value !== defaults[name]) params.set(name, field.value);
+            });
+            var tail = params.toString();
+            return tail ? location.pathname + '?' + tail : location.pathname;
+        }
+
+        function applyUrl(url) {
+            var params = new URLSearchParams((url || location.href).split('?')[1] || '');
+            Object.keys(defaults).forEach(function (name) {
+                var field = fields(name);
+                if (field) field.value = params.get(name) || defaults[name];
+            });
+            sync();
+        }
+
+        function runSearch() { htmx.trigger(form, 'submit'); }
+
+        // Явное действие (Enter, «Найти», смена фильтра) добавляет запись в
+        // историю; живой поиск по буквам — только заменяет адрес, иначе каждая
+        // пауза в наборе плодила бы записи.
+        form.addEventListener('submit', function () { pushing = true; });
+        ['rubric', 'privacy'].forEach(function (name) {
+            var field = fields(name);
+            if (field) field.addEventListener('change', function () { pushing = true; });
+        });
+
+        document.body.addEventListener('htmx:afterRequest', function (event) {
+            if (!form.contains(event.detail.elt)) return;
+            var url = stateUrl();
+            if (pushing) history.pushState(null, '', url);
+            else history.replaceState(null, '', url);
+            pushing = false;
+        });
+
+        // Возврат по «назад»/«вперёд» между поисками: показать прежние условия.
+        window.addEventListener('popstate', function () {
+            applyUrl(location.href);
+            runSearch();
+        });
+
+        form.addEventListener('input', sync);
+        form.addEventListener('change', sync);
+
+        // Сброс: чистим поля, адрес и результаты — без запроса к серверу.
+        button.addEventListener('click', function (event) {
+            event.preventDefault();
+            Object.keys(defaults).forEach(function (name) {
+                var field = fields(name);
+                if (field) field.value = defaults[name];
+            });
+            history.pushState(null, '', location.pathname);
+            sync();
+            runSearch();
+        });
+
+        // Подсказка-чипс выбирает рубрику и сразу запускает поиск.
         document.addEventListener('click', function (event) {
             var chip = event.target.closest('[data-rubric]');
             if (!chip) return;
             var select = document.getElementById('rubric-select');
             if (!select) return;
             select.value = chip.dataset.rubric;
+            pushing = true;
             select.dispatchEvent(new Event('change', { bubbles: true }));
             sync();
         });
 
-        form.addEventListener('input', sync);
-        form.addEventListener('change', sync);
-        button.addEventListener('click', function () {
-            Object.keys(defaults).forEach(function (name) {
-                var field = fields(name);
-                if (field) field.value = defaults[name];
-            });
-            sync();
+        // Загрузка страницы с запросом в адресе — сразу показать результаты.
+        var hasState = ['query', 'rubric', 'privacy'].some(function (name) {
+            return new URLSearchParams(location.search).has(name);
         });
-        sync();
+        if (hasState) {
+            applyUrl(location.href);
+            runSearch();
+        } else {
+            sync();
+        }
     })();
 </script>
 {% endblock %}
