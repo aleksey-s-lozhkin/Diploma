@@ -1,0 +1,136 @@
+{% load ui %}
+<div id="dashboard-container">
+    <h1>Мои документы</h1>
+    <p class="hello">Здесь всё, что вы загрузили. Приватные документы видите только вы, публичные находят все — по ним и работает поиск.</p>
+
+    <div class="head">
+        <p class="crumbs">
+            <a href="{% url 'index' %}">{% icon "back" 16 %} Поиск</a>
+        </p>
+        <div class="sorts">
+            <button type="button"
+                    class="{% if not show_public %}is-active{% endif %}"
+                    hx-get="{% url 'dashboard' %}?show_public=false"
+                    hx-target="#dashboard-container"
+                    hx-push-url="true"
+                    hx-indicator="#spinner-global">
+                {% icon "lock" 16 %} Мои
+            </button>
+            <button type="button"
+                    class="{% if show_public %}is-active{% endif %}"
+                    hx-get="{% url 'dashboard' %}?show_public=true"
+                    hx-target="#dashboard-container"
+                    hx-push-url="true"
+                    hx-indicator="#spinner-global">
+                {% icon "globe" 16 %} С публичными
+            </button>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat"><b>{{ documents.paginator.count }}</b><span>документов</span></div>
+        <div class="stat"><b>{{ total_searches }}</b><span>запросов в истории</span></div>
+        <div class="stat"><b>{{ documents|length }}</b><span>на этой странице</span></div>
+    </div>
+
+    <div class="head">
+        <a href="{% url 'document_create' %}" class="button">{% icon "plus" 18 %} Создать документ</a>
+        <span class="spinner htmx-indicator" id="spinner-global" role="status" aria-label="Загрузка"></span>
+    </div>
+
+    {% if documents %}
+        <ul class="list fade-during">
+            {% for doc in documents %}
+                <li class="item {% if doc.is_public %}public{% endif %}" id="doc-item-{{ doc.id }}">
+                    <div class="body">
+                        <a class="title" href="{% url 'document_detail' doc.id %}">
+                            {% if doc.file_name %}{{ doc.file_name|truncatechars:60 }}{% else %}Документ #{{ doc.id }}{% endif %}
+                        </a>
+
+                        <div style="margin-top:6px">
+                            {% for rubric in doc.rubrics|slice:":3" %}
+                                <span class="tag">{{ rubric }}</span>
+                            {% endfor %}
+                            {% if doc.rubrics|length > 3 %}
+                                <span class="tag">+{{ doc.rubrics|length|add:"-3" }}</span>
+                            {% endif %}
+                            {% if doc.is_public %}
+                                <span class="tag public">{% icon "globe" 13 %} публичный</span>
+                            {% else %}
+                                <span class="tag private">{% icon "lock" 13 %} приватный</span>
+                            {% endif %}
+                        </div>
+
+                        <p class="snippet {% if not doc.text %}is-empty{% endif %}">
+                            {% if doc.text %}{{ doc.text|striptags|truncatewords:20 }}{% else %}текст не извлечён{% endif %}
+                        </p>
+
+                        <div class="counts">
+                            <span class="count">{{ doc.created_date|date:"d.m.Y H:i" }}</span>
+                            {% if doc.file_type %}<span class="count">{{ doc.file_type }}</span>{% endif %}
+                        </div>
+                    </div>
+
+                    <div class="tools">
+                        <a class="iconbtn" href="{% url 'document_detail' doc.id %}" title="Открыть" aria-label="Открыть">{% icon "eye" 20 %}</a>
+
+                        {% if not doc.is_public %}
+                            <form method="post" action="{% url 'toggle_public' doc.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="iconbtn" title="Сделать публичным" aria-label="Сделать публичным">{% icon "globe" 20 %}</button>
+                            </form>
+                        {% else %}
+                            <form method="post" action="{% url 'toggle_public' doc.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="iconbtn" title="Сделать приватным" aria-label="Сделать приватным">{% icon "lock" 20 %}</button>
+                            </form>
+                        {% endif %}
+
+                        <button type="button" class="iconbtn danger"
+                                title="Удалить" aria-label="Удалить"
+                                hx-delete="{% url 'document_delete' doc.id %}"
+                                hx-target="#doc-item-{{ doc.id }}"
+                                hx-swap="outerHTML"
+                                hx-confirm="Удалить документ? Отменить будет невозможно.">
+                            {% icon "trash" 20 %}
+                        </button>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+
+        {% if documents.has_other_pages %}
+            <nav class="pagination" aria-label="Страницы">
+                {% if documents.has_previous %}
+                    <button type="button"
+                            hx-get="{% url 'dashboard' %}?page={{ documents.previous_page_number }}{% if show_public %}&show_public=true{% endif %}"
+                            hx-target="#dashboard-container" hx-push-url="true" hx-indicator="#spinner-global"
+                            aria-label="Предыдущая страница">{% icon "chevron-left" 18 %}</button>
+                {% endif %}
+
+                {% for p in documents.paginator.page_range %}
+                    {% if documents.number == p %}
+                        <span class="is-current">{{ p }}</span>
+                    {% elif p > documents.number|add:'-3' and p < documents.number|add:'3' %}
+                        <button type="button"
+                                hx-get="{% url 'dashboard' %}?page={{ p }}{% if show_public %}&show_public=true{% endif %}"
+                                hx-target="#dashboard-container" hx-push-url="true" hx-indicator="#spinner-global">{{ p }}</button>
+                    {% endif %}
+                {% endfor %}
+
+                {% if documents.has_next %}
+                    <button type="button"
+                            hx-get="{% url 'dashboard' %}?page={{ documents.next_page_number }}{% if show_public %}&show_public=true{% endif %}"
+                            hx-target="#dashboard-container" hx-push-url="true" hx-indicator="#spinner-global"
+                            aria-label="Следующая страница">{% icon "chevron-right" 18 %}</button>
+                {% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <div class="empty">
+            <p>Документов пока нет.</p>
+            <p class="small">Загрузите файл или введите текст — документ сразу попадёт в поиск.</p>
+            <p style="margin-top:16px"><a class="button" href="{% url 'document_create' %}">{% icon "plus" 18 %} Создать документ</a></p>
+        </div>
+    {% endif %}
+</div>
