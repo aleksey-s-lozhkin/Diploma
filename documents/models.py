@@ -29,6 +29,11 @@ class Document(models.Model):
         max_length=10, choices=TEXT_SOURCE_CHOICES, default="manual", verbose_name="Источник текста"
     )
 
+    #: Краткое описание и теги от языковой модели (documents/services/summary_service.py).
+    #: Пусто, если модель недоступна: описание — украшение, а не условие работы.
+    summary = models.TextField(blank=True, verbose_name="Краткое описание")
+    keywords = models.JSONField(default=list, blank=True, verbose_name="Теги")
+
     def __str__(self):
         return f"Document #{self.id}"
 

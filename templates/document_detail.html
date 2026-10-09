@@ -61,6 +61,16 @@
     </div>
 {% endif %}
 
+{% if doc.summary %}
+    <div class="card">
+        <h2>О чём документ</h2>
+        <p style="margin:0 0 10px">{{ doc.summary }}</p>
+        {% if doc.keywords %}
+            <div>{% for tag in doc.keywords %}<span class="tag">#{{ tag }}</span>{% endfor %}</div>
+        {% endif %}
+    </div>
+{% endif %}
+
 {% if doc.text %}
     <div class="card">
         <h2>Извлечённый текст</h2>

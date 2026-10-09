@@ -122,6 +122,16 @@ USE_I18N = True
 USE_TZ = True
 
 # Статические файлы
+# Описания и теги документов делает языковая модель на Ollama. Она может быть
+# недоступна — тогда документ просто остаётся без описания: поиск и загрузка от
+# неё не зависят.
+OLLAMA_URL = os.getenv("OLLAMA_URL", "")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"))
+#: Сколько знаков документа отправлять модели: остальное не влезает в контекст
+#: и не нужно для описания.
+SUMMARY_TEXT_LIMIT = int(os.getenv("SUMMARY_TEXT_LIMIT", "6000"))
+
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 
