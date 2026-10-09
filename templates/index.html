@@ -9,6 +9,12 @@
 <div class="search-layout">
 <div class="card">
     {% if user.is_authenticated %}
+        {% comment %}
+           Форма, а не просто поле: без неё Enter отправляет запрос только
+           потому, что браузер сам шлёт событие search, — и работает это не
+           везде. Заодно правильно работают автозаполнение и менеджеры паролей.
+        {% endcomment %}
+        <form id="search-form" hx-post="{% url 'search_results' %}" hx-target="#search-results" hx-indicator="#spinner">
         <div class="searchbar">
             <input type="search"
                    name="query"
@@ -16,17 +22,11 @@
                    placeholder="Что ищем? Например: договор, git, отчёт"
                    autocomplete="off"
                    hx-post="{% url 'search_results' %}"
-                   hx-trigger="keyup changed delay:500ms, search"
+                   hx-trigger="keyup changed delay:500ms"
                    hx-target="#search-results"
                    hx-indicator="#spinner"
                    hx-include="[name='rubric'], [name='privacy']">
-            <button type="button"
-                    hx-post="{% url 'search_results' %}"
-                    hx-target="#search-results"
-                    hx-indicator="#spinner"
-                    hx-include="[name='query'], [name='rubric'], [name='privacy']">
-                {% icon "search" 18 %} Найти
-            </button>
+            <button type="submit">{% icon "search" 18 %} Найти</button>
         </div>
 
         <div class="filters">
@@ -58,9 +58,10 @@
                 </select>
             </div>
         </div>
+        </form>
 
         <div class="actions">
-            <button type="button" class="button ghost small" id="reset-button"
+            <button type="button" class="button ghost small" id="reset-button" hidden
                     hx-post="{% url 'search_results' %}"
                     hx-vals='{"reset": "true"}'
                     hx-target="#search-results"
@@ -88,18 +89,33 @@
 
 {% block scripts %}
 <script>
-    // Сброс — это ещё и очистка полей: сервер возвращает пустую подсказку, но
-    // сам ввод остался бы на экране и выглядел бы как неработающая кнопка.
     (function () {
+        var form = document.getElementById('search-form');
         var button = document.getElementById('reset-button');
-        if (!button) return;
-        button.addEventListener('click', function () {
-            var fields = { 'search-query': '', 'rubric-select': '', 'privacy-select': 'all' };
-            Object.keys(fields).forEach(function (id) {
-                var field = document.getElementById(id);
-                if (field) field.value = fields[id];
+        if (!form || !button) return;
+
+        var defaults = { query: '', rubric: '', privacy: 'all' };
+        var fields = function (name) { return form.querySelector('[name="' + name + '"]'); };
+
+        // Кнопка сброса полезна только тогда, когда что-то выбрано: иначе она
+        // занимает место и ничего не делает.
+        function sync() {
+            button.hidden = !Object.keys(defaults).some(function (name) {
+                var field = fields(name);
+                return field && field.value !== defaults[name];
             });
+        }
+
+        form.addEventListener('input', sync);
+        form.addEventListener('change', sync);
+        button.addEventListener('click', function () {
+            Object.keys(defaults).forEach(function (name) {
+                var field = fields(name);
+                if (field) field.value = defaults[name];
+            });
+            sync();
         });
+        sync();
     })();
 </script>
 {% endblock %}

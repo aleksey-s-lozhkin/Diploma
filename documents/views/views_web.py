@@ -112,6 +112,16 @@ class SearchResultsView(View):
 
             results_list = [r.to_dict() for r in search_response.results]
 
+            # Имя файла и ссылка на него: по отрывку не понять, из какого он
+            # документа, а «открыть оригинал» — первое, что нужно после находки.
+            document_ids = [item.get("id") for item in results_list if item.get("id")]
+            files = {
+                document.pk: (document.file_name, document.file.url if document.file else "")
+                for document in Document.objects.filter(pk__in=document_ids)
+            }
+            for item in results_list:
+                item["file_name"], item["file_url"] = files.get(item.get("id"), ("", ""))
+
             # Получаем page_range для пагинации
             total_pages = search_response.total_pages
             current_page = page
@@ -214,6 +224,7 @@ class DashboardView(View):
             {
                 "documents": documents,
                 "total_searches": total_searches,
+                "public_count": Document.objects.filter(user=request.user, is_public=True).count(),
                 "show_public": show_public,
                 "page": page,
                 "total_pages": paginator.num_pages,

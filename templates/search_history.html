@@ -18,7 +18,8 @@
 {% if history %}
     <ul class="list">
         {% for item in history %}
-            <li class="item">
+            {# Запрос без результатов бледнее: полезные находки видны сразу. #}
+            <li class="item {% if not item.results_count %}dead{% endif %}">
                 <div class="body">
                     <a class="title" href="{% url 'index' %}?query={{ item.query|urlencode }}">{% icon "search" 16 %} {{ item.query }}</a>
                     <div class="counts">

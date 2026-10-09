@@ -6,11 +6,16 @@
 браузере, поэтому проверка обходит все страницы, а не одну.
 """
 
+import re
+from unittest import mock
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from documents.models import Document
+from documents.models import Document, SearchHistory
+from documents.services.search_service import SearchService
 
 User = get_user_model()
 
@@ -196,3 +201,151 @@ class WideLayoutTest(TestCase):
                     body.count("</div>"),
                     f"{name}: число открытых и закрытых div разошлось",
                 )
+
+
+class AccessibilityTest(TestCase):
+    """Контраст текста в светлой теме не ниже AA.
+
+    Тёплый бежевый фон «съедает» контраст, и подписи на нём легко сделать
+    нечитаемыми. Проверяем числом по WCAG, а не на глаз: 4.5:1 для обычного
+    текста. Тёмная тема проверена вручную — там запас больше.
+    """
+
+    @staticmethod
+    def _luminance(color):
+        value = color.lstrip("#")
+        channels = [int(value[index : index + 2], 16) / 255 for index in (0, 2, 4)]
+        linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    def _ratio(self, first, second):
+        a, b = self._luminance(first), self._luminance(second)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+    def test_light_theme_text_passes_aa(self):
+        css = (settings.BASE_DIR / "static_src" / "css" / "app.css").read_text()
+        light = css[css.index(':root[data-theme="light"]') : css.index("* { box-sizing")]
+
+        def value(name):
+            match = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", light)
+            self.assertIsNotNone(match, f"в светлой теме не найдена переменная --{name}")
+            return match.group(1)
+
+        background = value("bg")
+        for name, label in (
+            ("text", "основной текст"),
+            ("text-soft", "мягкий текст"),
+            ("text-muted", "приглушённый текст"),
+            ("primary-hover", "ссылки"),
+        ):
+            ratio = self._ratio(value(name), background)
+            self.assertGreaterEqual(round(ratio, 2), 4.5, f"{label} на фоне: {ratio:.2f}:1 — ниже AA")
+
+
+class SearchFormTest(TestCase):
+    """Поиск должен быть формой: иначе Enter работает по совпадению."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.client.force_login(self.user)
+
+    def test_search_is_a_real_form_with_submit_button(self):
+        body = self.client.get(reverse("index")).content.decode()
+
+        self.assertIn('id="search-form"', body)
+        self.assertIn('type="submit"', body, "Enter не отправит запрос без submit-кнопки")
+        self.assertIn('name="query"', body)
+        self.assertIn('name="rubric"', body)
+        self.assertIn('name="privacy"', body)
+
+    def test_reset_button_is_hidden_until_something_is_chosen(self):
+        body = self.client.get(reverse("index")).content.decode()
+        self.assertIn('id="reset-button" hidden', body)
+
+    def test_empty_query_returns_hint_not_error(self):
+        response = self.client.post(reverse("search_results"), {"query": ""})
+        self.assertEqual(response.status_code, 200)
+
+
+class DashboardMetricsTest(TestCase):
+    """Метрики дашборда говорят о документах, а не о размере страницы."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        Document.objects.create(user=self.user, text="Приватный", rubrics=["право"])
+        Document.objects.create(user=self.user, text="Публичный", rubrics=["право"], is_public=True)
+        self.client.force_login(self.user)
+
+    def test_public_count_is_shown(self):
+        body = self.client.get(reverse("dashboard")).content.decode()
+
+        self.assertIn("публичных", body)
+        self.assertNotIn("на этой странице", body)
+
+    def test_toggle_is_a_segmented_control(self):
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertIn('class="segmented"', body)
+
+
+class SearchResultCardTest(TestCase):
+    """В результатах видно, из какого документа отрывок, и его можно скачать."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.document = Document.objects.create(
+            user=self.user, text="Договор поставки", rubrics=["право"], file_name="Договор.pdf"
+        )
+        self.client.force_login(self.user)
+
+    def test_card_shows_file_name_and_download(self):
+        class FakeHit:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def to_dict(self):
+                return dict(self.payload)
+
+        class FakeResponse:
+            total = 1
+            page = 1
+            total_pages = 1
+            page_range = [1]
+            results = [
+                FakeHit(
+                    {
+                        "id": self.document.pk,
+                        "rubrics": ["право"],
+                        "text": "Договор поставки",
+                        "created_date": self.document.created_date,
+                        "is_public": False,
+                        "highlights": ["Договор <mark>поставки</mark>"],
+                    }
+                )
+            ]
+
+        with mock.patch.object(SearchService, "search", return_value=FakeResponse()):
+            response = self.client.post(reverse("search_results"), {"query": "поставки"})
+
+        body = response.content.decode()
+        self.assertIn("Договор.pdf", body, "в результатах не видно, из какого документа отрывок")
+
+
+class HistoryDimmingTest(TestCase):
+    """Запрос без результатов в истории бледнее: находки видны сразу."""
+
+    def test_empty_result_row_is_dimmed(self):
+        user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        SearchHistory.objects.create(user=user, query="нашлось", results_count=3)
+        SearchHistory.objects.create(user=user, query="не нашлось", results_count=0)
+        self.client.force_login(user)
+
+        body = self.client.get(reverse("search_history")).content.decode()
+        self.assertEqual(body.count("item dead"), 1, "пустой запрос не выделен")

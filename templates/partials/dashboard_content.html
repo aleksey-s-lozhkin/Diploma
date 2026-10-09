@@ -7,7 +7,7 @@
         <p class="crumbs">
             <a href="{% url 'index' %}">{% icon "back" 16 %} Поиск</a>
         </p>
-        <div class="sorts">
+        <div class="segmented" role="group" aria-label="Чьи документы показывать">
             <button type="button"
                     class="{% if not show_public %}is-active{% endif %}"
                     hx-get="{% url 'dashboard' %}?show_public=false"
@@ -30,7 +30,7 @@
     <div class="stats">
         <div class="stat"><b>{{ documents.paginator.count }}</b><span>документов</span></div>
         <div class="stat"><b>{{ total_searches }}</b><span>запросов в истории</span></div>
-        <div class="stat"><b>{{ documents|length }}</b><span>на этой странице</span></div>
+        <div class="stat"><b>{{ public_count }}</b><span>публичных</span></div>
     </div>
 
     <div class="head">
