@@ -328,6 +328,7 @@ class SearchResultCardTest(TestCase):
                         "created_date": self.document.created_date,
                         "is_public": False,
                         "highlights": ["Договор <mark>поставки</mark>"],
+                        "summary": "Шпаргалка про договоры.",
                     }
                 )
             ]
@@ -337,6 +338,8 @@ class SearchResultCardTest(TestCase):
 
         body = response.content.decode()
         self.assertIn("Договор.pdf", body, "в результатах не видно, из какого документа отрывок")
+        self.assertIn("Шпаргалка про договоры", body, "в результатах нет описания документа")
+        self.assertIn("<mark>поставки</mark>", body, "нет подсветки найденного слова")
 
 
 class HistoryDimmingTest(TestCase):

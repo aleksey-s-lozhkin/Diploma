@@ -117,12 +117,21 @@ class SearchResultsView(View):
             # Имя файла и ссылка на него: по отрывку не понять, из какого он
             # документа, а «открыть оригинал» — первое, что нужно после находки.
             document_ids = [item.get("id") for item in results_list if item.get("id")]
-            files = {
-                document.pk: (document.file_name, document.file.url if document.file else "")
+            details = {
+                document.pk: {
+                    "file_name": document.file_name,
+                    "file_url": document.file.url if document.file else "",
+                    # Описание и теги от модели: по ним карточка понятна сходу,
+                    # тогда как обрывок извлечённого текста ничего не объясняет.
+                    "summary": document.summary,
+                    "keywords": document.keywords or [],
+                }
                 for document in Document.objects.filter(pk__in=document_ids)
             }
             for item in results_list:
-                item["file_name"], item["file_url"] = files.get(item.get("id"), ("", ""))
+                item.update(
+                    details.get(item.get("id"), {"file_name": "", "file_url": "", "summary": "", "keywords": []})
+                )
 
             # Получаем page_range для пагинации
             total_pages = search_response.total_pages
