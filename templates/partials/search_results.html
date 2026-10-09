@@ -27,7 +27,7 @@
             Найдено <strong>{{ total }}</strong>
             {% if query %}по запросу «{{ query }}»{% endif %}
         </p>
-        <div class="sorts">
+        <div class="segmented" role="group" aria-label="Порядок результатов">
             <button type="button" class="{% if sort == 'relevance' %}is-active{% endif %}"
                     hx-post="{% url 'search_results' %}"
                     hx-vals='{"sort": "relevance", "query": "{{ query|escapejs }}", "rubric": "{{ rubric|escapejs }}", "privacy": "{{ privacy|escapejs }}", "page": 1}'
@@ -47,6 +47,9 @@
         {% for doc in results %}
             <li class="item {% if doc.is_public %}public{% endif %}">
                 <div class="body">
+                    {% if doc.file_name %}
+                        <a class="title" href="{% url 'document_detail' doc.id %}">{{ doc.file_name }}</a>
+                    {% endif %}
                     <div>
                         {% for rubric in doc.rubrics %}
                             <span class="tag">{{ rubric }}</span>
@@ -80,7 +83,11 @@
                     <button type="button" class="iconbtn" data-viewer="{{ doc.id }}"
                             title="Быстрый просмотр" aria-label="Быстрый просмотр">{% icon "eye" 20 %}</button>
                     <a class="iconbtn" href="{% url 'document_detail' doc.id %}"
-                       title="Открыть" aria-label="Открыть">{% icon "file" 20 %}</a>
+                       title="Открыть документ" aria-label="Открыть документ">{% icon "file" 20 %}</a>
+                    {% if doc.file_url %}
+                        <a class="iconbtn" href="{{ doc.file_url }}" download
+                           title="Скачать файл" aria-label="Скачать файл">{% icon "download" 20 %}</a>
+                    {% endif %}
                 </div>
             </li>
         {% endfor %}
