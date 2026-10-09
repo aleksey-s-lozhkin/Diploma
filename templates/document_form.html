@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load ui %}
 
-{% block title %}Новый документ{% endblock %}
+{% block title %}Новый документ
 
 {% block content %}
 <p class="crumbs"><a href="{% url 'dashboard' %}">{% icon "back" 16 %} Мои документы</a></p>
@@ -21,15 +21,22 @@
 
         <div>
             <label for="file-input">Файл</label>
-            <input type="file" name="file" id="file-input" accept=".pdf,.docx,.xlsx,.txt">
-            <small class="muted">PDF, DOCX, XLSX или TXT, до 20 МБ. Текст извлекается автоматически.</small>
+            <label class="dropzone" id="dropzone" for="file-input">
+                <input type="file" name="file" id="file-input" accept=".pdf,.docx,.xlsx,.txt">
+                <p class="dz-hint">{% icon "upload" 22 %} Перетащите файл сюда или нажмите, чтобы выбрать</p>
+                <p class="dz-note muted small">PDF, DOCX, XLSX или TXT, до 20 МБ. Текст извлекается автоматически.</p>
+            </label>
+            <div class="chosen" id="chosen" hidden>
+                <span class="name" id="chosen-name"></span>
+                <button type="button" class="button ghost small" id="clear-file">Убрать файл</button>
+            </div>
         </div>
 
-        <div>
+        <div id="manual-text">
             <label for="id_text">Или текст вручную</label>
             <textarea name="text" id="id_text" rows="12"
                       placeholder="Вставьте текст документа">{{ text_value }}</textarea>
-            <small class="muted">Если выбран файл, текст из него важнее: вручную введённое не сохранится.</small>
+            <small class="muted">Если выберете файл, возьмём текст из него.</small>
         </div>
 
         <div class="check">
@@ -46,4 +53,57 @@
         <a class="button ghost" href="{% url 'dashboard' %}">Отмена</a>
     </div>
 </form>
+{% endblock %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Файл и ручной текст — одно и то же поле смысла, поэтому при выбранном
+    // файле ручной ввод убирается с глаз: предупреждать о потере хуже, чем не
+    // терять. Введённый текст при этом остаётся в поле — уберёте файл, и он
+    // вернётся.
+    (function () {
+        var input = document.getElementById('file-input');
+        var zone = document.getElementById('dropzone');
+        var chosen = document.getElementById('chosen');
+        var chosenName = document.getElementById('chosen-name');
+        var manual = document.getElementById('manual-text');
+        var clear = document.getElementById('clear-file');
+        if (!input || !zone) return;
+
+        function sync() {
+            var file = input.files && input.files[0];
+            chosen.hidden = !file;
+            manual.hidden = Boolean(file);
+            if (file) chosenName.textContent = file.name;
+        }
+
+        function take(files) {
+            if (!files || !files.length) return;
+            // Список файлов у input только для чтения, поэтому подменяем его
+            // через DataTransfer — так работает во всех современных браузерах.
+            var transfer = new DataTransfer();
+            transfer.items.add(files[0]);
+            input.files = transfer.files;
+            sync();
+        }
+
+        input.addEventListener('change', sync);
+        zone.addEventListener('dragover', function (event) {
+            event.preventDefault();
+            zone.classList.add('is-over');
+        });
+        zone.addEventListener('dragleave', function () { zone.classList.remove('is-over'); });
+        zone.addEventListener('drop', function (event) {
+            event.preventDefault();
+            zone.classList.remove('is-over');
+            take(event.dataTransfer.files);
+        });
+        clear.addEventListener('click', function () {
+            input.value = '';
+            sync();
+        });
+        sync();
+    })();
+</script>
 {% endblock %}
