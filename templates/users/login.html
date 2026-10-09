@@ -4,9 +4,13 @@
 {% block title %}Вход — поиск документов{% endblock %}
 
 {% block content %}
+<div class="auth">
+    {% include 'partials/auth_aside.html' %}
+    <div>
+
 <h1>Вход в систему</h1>
 
-<div class="card narrow">
+<div class="card">
     {% include 'users/login_form.html' %}
 
     <p class="muted small" style="margin:18px 0 0">
@@ -15,5 +19,7 @@
     <p class="muted small" style="margin:6px 0 0">
         Нет аккаунта? <a href="{% url 'register' %}">Зарегистрироваться</a>
     </p>
+</div>
+    </div>
 </div>
 {% endblock %}

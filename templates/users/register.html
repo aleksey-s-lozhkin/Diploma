@@ -4,10 +4,16 @@
 {% block title %}Регистрация — поиск документов{% endblock %}
 
 {% block content %}
+<div class="auth">
+    {% include 'partials/auth_aside.html' %}
+    <div>
+
 <h1>Регистрация</h1>
 
-<div class="card narrow">
+<div class="card">
     {% include 'users/register_form.html' %}
+</div>
+    </div>
 </div>
 {% endblock %}
 

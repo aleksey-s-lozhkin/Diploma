@@ -6,6 +6,7 @@
 {% block content %}
 <h1>Поиск документов</h1>
 
+<div class="search-layout">
 <div class="card">
     {% if user.is_authenticated %}
         <div class="searchbar">
@@ -76,11 +77,12 @@
     {% endif %}
 </div>
 
-<div id="search-results" style="margin-top:18px">
+<div id="search-results">
     <div class="empty">
         <p>Введите запрос — результаты появятся здесь.</p>
         <p class="small">Поиск идёт по тексту ваших документов и по публичным документам других.</p>
     </div>
+</div>
 </div>
 {% endblock %}
 
