@@ -152,3 +152,47 @@ class LayoutRegressionTest(TestCase):
             self.assertIn(mode, body, f"у кнопки темы нет варианта {mode}")
         for label in ("Авто", "Светлая", "Тёмная"):
             self.assertIn(label, body, f"режим темы не подписан: {label}")
+
+
+class WideLayoutTest(TestCase):
+    """Широкая раскладка: место на мониторе не должно пропадать.
+
+    На телефоне всё в одну колонку, на мониторе — в две: форма рядом с
+    результатом, списки карточками в несколько столбцов.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.client.force_login(self.user)
+
+    def test_search_page_has_two_columns(self):
+        body = self.client.get(reverse("index")).content.decode()
+
+        self.assertIn('class="search-layout"', body)
+        self.assertLess(
+            body.index('class="search-layout"'),
+            body.index('id="search-results"'),
+            "результаты поиска должны идти после формы",
+        )
+
+    def test_auth_pages_explain_themselves(self):
+        self.client.logout()
+        for name in ("login", "register", "password_reset_request"):
+            with self.subTest(name=name):
+                body = self.client.get(reverse(name)).content.decode()
+                self.assertIn('class="auth"', body)
+                self.assertIn('class="auth-aside"', body)
+                self.assertNotIn('class="card narrow"', body, "узкая карточка вернулась")
+
+    def test_markup_stays_balanced(self):
+        """Правки разметки делались строками — проверяем, что теги сошлись."""
+        for name in ("index", "dashboard", "document_create", "search_history"):
+            with self.subTest(name=name):
+                body = self.client.get(reverse(name)).content.decode()
+                self.assertEqual(
+                    body.count("<div"),
+                    body.count("</div>"),
+                    f"{name}: число открытых и закрытых div разошлось",
+                )

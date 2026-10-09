@@ -333,7 +333,9 @@ mark {
 @media (max-width: 420px) { .stats { grid-template-columns: 1fr; } }
 
 /* --- Длинный текст документа --- */
-.prose { overflow-wrap: anywhere; }
+/* Длинную строку глаз теряет: текст документа ограничен мерой чтения, даже
+   когда карточка широкая. */
+.prose { overflow-wrap: anywhere; max-width: 72ch; }
 .prose > *:first-child { margin-top: 0; }
 .prose > *:last-child { margin-bottom: 0; }
 .prose p { margin: 0 0 12px; }
@@ -469,4 +471,39 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
   .foot { padding-bottom: 24px; }
   .nav .label { font-size: 13.5px; }
   .topbar { margin-bottom: 24px; }
+}
+
+/* --- Широкий экран: место не должно пропадать ---
+   На телефоне всё в одну колонку, на мониторе — раскладка в две: слева форма,
+   справа результат, списки карточками в несколько столбцов. Пустая половина
+   экрана выглядит как недоделка. */
+@media (min-width: 1000px) {
+  main { max-width: 1120px; }
+  .foot { max-width: 1120px; }
+}
+
+@media (min-width: 900px) {
+  /* Поиск: форма слева, результаты справа. Поле поиска во всю ширину монитора
+     выглядит нелепо, а результатам нужна ширина. */
+  .search-layout { display: grid; grid-template-columns: 400px 1fr; gap: 24px; align-items: start; }
+  .search-layout .card { margin-bottom: 0; }
+
+  /* Списки: короткие карточки в несколько столбцов. */
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .list .item { height: 100%; }
+
+  /* Вход и регистрация: слева знак и объяснение, справа форма. */
+  .auth { display: grid; grid-template-columns: 1fr 420px; gap: 48px; align-items: start; }
+  .auth .card { margin-top: 0; }
+}
+
+/* Пояснение к приложению видно только там, где для него есть место. */
+.auth-aside { display: none; }
+@media (min-width: 900px) {
+  .auth-aside { display: block; padding-top: 6px; }
+  .auth-aside img { width: 84px; height: 84px; border-radius: 24px; box-shadow: var(--shadow-small); }
+  .auth-aside h2 { font-size: 25px; letter-spacing: -0.01em; margin: 18px 0 10px; }
+  .auth-aside p { color: var(--text-soft); margin: 0 0 12px; }
+  .auth-aside ul { margin: 0; padding-left: 20px; color: var(--text-muted); }
+  .auth-aside li { margin: 4px 0; }
 }
