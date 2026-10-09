@@ -167,7 +167,7 @@ class WideLayoutTest(TestCase):
         )
         self.client.force_login(self.user)
 
-    def test_search_page_has_two_columns(self):
+    def test_search_page_stacks_form_and_results(self):
         body = self.client.get(reverse("index")).content.decode()
 
         self.assertIn('class="search-layout"', body)

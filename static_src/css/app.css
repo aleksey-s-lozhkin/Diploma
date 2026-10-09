@@ -473,37 +473,42 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
   .topbar { margin-bottom: 24px; }
 }
 
-/* --- Широкий экран: место не должно пропадать ---
-   На телефоне всё в одну колонку, на мониторе — раскладка в две: слева форма,
-   справа результат, списки карточками в несколько столбцов. Пустая половина
-   экрана выглядит как недоделка. */
+/* --- Раскладка ---
+   Всё в одну колонку: форма, потом результат под ней. Две колонки на широком
+   экране выглядели пустыми, пока справа ничего нет, а читать сверху вниз
+   привычнее. Контейнер при этом шире прежних 680 px — место не пропадает.
+
+   На телефоне колонка та же, меняются только ширина и отступы. */
+.search-layout { display: flex; flex-direction: column; gap: 18px; }
+
 @media (min-width: 1000px) {
-  main { max-width: 1120px; }
-  .foot { max-width: 1120px; }
+  main { max-width: 860px; }
+  .foot { max-width: 860px; }
 }
 
-@media (min-width: 900px) {
-  /* Поиск: форма слева, результаты справа. Поле поиска во всю ширину монитора
-     выглядит нелепо, а результатам нужна ширина. */
-  .search-layout { display: grid; grid-template-columns: 400px 1fr; gap: 24px; align-items: start; }
-  .search-layout .card { margin-bottom: 0; }
-
-  /* Списки: короткие карточки в несколько столбцов. */
-  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
-  .list .item { height: 100%; }
-
-  /* Вход и регистрация: слева знак и объяснение, справа форма. */
-  .auth { display: grid; grid-template-columns: 1fr 420px; gap: 48px; align-items: start; }
-  .auth .card { margin-top: 0; }
-}
-
-/* Пояснение к приложению видно только там, где для него есть место. */
-.auth-aside { display: none; }
-@media (min-width: 900px) {
-  .auth-aside { display: block; padding-top: 6px; }
-  .auth-aside img { width: 84px; height: 84px; border-radius: 24px; box-shadow: var(--shadow-small); }
-  .auth-aside h2 { font-size: 25px; letter-spacing: -0.01em; margin: 18px 0 10px; }
-  .auth-aside p { color: var(--text-soft); margin: 0 0 12px; }
-  .auth-aside ul { margin: 0; padding-left: 20px; color: var(--text-muted); }
+/* Пояснение к приложению: на телефоне только знак и название, на широком
+   экране — ещё и что приложение делает. */
+.auth { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.auth > div { width: 100%; max-width: 460px; }
+.auth-aside { text-align: center; }
+.auth-aside img { width: 60px; height: 60px; border-radius: 18px; box-shadow: var(--shadow-small); }
+.auth-aside h2 { font-size: 20px; margin: 12px 0 0; }
+.auth-aside p, .auth-aside ul { display: none; }
+@media (min-width: 720px) {
+  .auth-aside img { width: 72px; height: 72px; border-radius: 22px; }
+  .auth-aside h2 { font-size: 23px; }
+  .auth-aside p { display: block; color: var(--text-soft); margin: 8px 0 0; }
+  .auth-aside ul { display: block; margin: 10px 0 0; padding: 0; list-style: none; color: var(--text-muted); }
   .auth-aside li { margin: 4px 0; }
+}
+
+/* --- Шапка в углу ---
+   На широком экране знак стоит в левом верхнем углу окна, как панель переходов
+   в правом: содержимое при этом остаётся в своей колонке по центру. */
+@media (min-width: 860px) {
+  .topbar {
+    position: fixed; top: 0; left: 0; z-index: 20;
+    margin: 0; padding: 10px 16px;
+  }
+  .topbar img { width: 42px; height: 42px; border-radius: 13px; }
 }
