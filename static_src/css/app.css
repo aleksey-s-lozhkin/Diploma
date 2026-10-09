@@ -268,7 +268,10 @@ button:disabled { opacity: .55; cursor: default; }
 
 .counts { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 6px 0 0; }
 .count { font-size: 13.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
-.count::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+/* Разделитель между метриками, а не маркер списка: точки в начале строки
+   читались как случайные пункты. */
+.count + .count::before { content: "·"; margin-right: 8px; color: var(--text-muted); font-weight: 400; }
+.counts { gap: 4px; }
 .count.due { color: var(--primary-hover); }
 .count.fresh { color: var(--success); }
 

@@ -61,6 +61,16 @@
                         {% endif %}
                     </div>
 
+                    {% if doc.summary %}
+                        <p class="snippet">{{ doc.summary }}</p>
+                    {% endif %}
+
+                    {% if doc.keywords %}
+                        <div style="margin-top:6px">
+                            {% for tag in doc.keywords %}<span class="tag">#{{ tag }}</span>{% endfor %}
+                        </div>
+                    {% endif %}
+
                     <div class="highlights">
                         {% if doc.highlights %}
                             {% for fragment in doc.highlights %}
@@ -68,7 +78,8 @@
                                 {# текст до этого экранирован в SearchService.sanitize_highlight. #}
                                 <p class="snippet">{{ fragment|safe }}</p>
                             {% endfor %}
-                        {% else %}
+                        {% elif not doc.summary %}
+                            {# Без описания показываем текст: лучше обрывок, чем пусто. #}
                             <p class="snippet">{{ doc.text|striptags|truncatewords:50 }}</p>
                         {% endif %}
                     </div>

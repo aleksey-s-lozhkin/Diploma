@@ -93,3 +93,32 @@ class HighlightQueryTest(TestCase):
         self.assertEqual(highlight["pre_tags"], [HIGHLIGHT_PRE_TAG])
         self.assertEqual(highlight["post_tags"], [HIGHLIGHT_POST_TAG])
         self.assertIn("text", highlight["fields"])
+
+
+class MarkQueryTermsTest(TestCase):
+    """Подсветка слов запроса своими руками.
+
+    Elasticsearch не подсвечивает нечёткие совпадения, а наш поиск ищет с
+    fuzziness — без этого человек не видит, что же нашлось.
+    """
+
+    def test_terms_are_marked(self):
+        from documents.services.search_service import mark_query_terms
+
+        self.assertEqual(mark_query_terms("про словари и dict", "dict"), "про словари и <mark>dict</mark>")
+
+    def test_case_is_ignored(self):
+        from documents.services.search_service import mark_query_terms
+
+        self.assertIn("<mark>Dict</mark>", mark_query_terms("Dict и dict", "dict"))
+
+    def test_existing_marks_are_kept_as_is(self):
+        from documents.services.search_service import mark_query_terms
+
+        already = "про <mark>dict</mark>"
+        self.assertEqual(mark_query_terms(already, "dict"), already)
+
+    def test_short_words_are_not_marked(self):
+        from documents.services.search_service import mark_query_terms
+
+        self.assertEqual(mark_query_terms("и он", "и"), "и он")

@@ -73,6 +73,30 @@ class SearchResponse:
         }
 
 
+def mark_query_terms(fragment: str, query: str) -> str:
+    """Подсветить слова запроса в готовом фрагменте.
+
+    Elasticsearch не подсвечивает нечёткие совпадения, а наш поиск ищет именно с
+    fuzziness: при таком совпадении приходит фрагмент без единого <mark>, и
+    человек не видит, что же нашлось. Подсвечиваем сами. Фрагмент к этому
+    моменту уже экранирован (sanitize_highlight), поэтому добавляем только свои
+    теги и ничего не ломаем.
+    """
+    if HIGHLIGHT_PRE_TAG in fragment:
+        return fragment
+
+    terms = {term for term in re.split(r"\W+", query or "") if len(term) >= 3}
+    if not terms:
+        return fragment
+
+    # Длинные слова первыми: иначе «словарь» перехватит совпадение у «словари».
+    pattern = re.compile(
+        "(" + "|".join(re.escape(term) for term in sorted(terms, key=len, reverse=True)) + ")",
+        re.IGNORECASE,
+    )
+    return pattern.sub(rf"{HIGHLIGHT_PRE_TAG}\1{HIGHLIGHT_POST_TAG}", fragment)
+
+
 class SearchService:
     """Сервис для полнотекстового поиска документов в Elasticsearch"""
 
@@ -115,7 +139,7 @@ class SearchService:
         return s
 
     @staticmethod
-    def extract_highlights(hit) -> List[str]:
+    def extract_highlights(hit, query: str = "") -> List[str]:
         """
         Извлечение подсветок (highlight) из результата поиска.
 
@@ -132,7 +156,7 @@ class SearchService:
                 # подсветки: см. sanitize_highlight.
                 cleaned = re.sub(r"\s+", " ", fragment).strip()
                 if cleaned:
-                    highlights.append(sanitize_highlight(cleaned))
+                    highlights.append(mark_query_terms(sanitize_highlight(cleaned), query))
         return highlights
 
     @staticmethod
@@ -223,7 +247,7 @@ class SearchService:
                 text=text,
                 created_date=hit.created_date,
                 is_public=hit.is_public,
-                highlights=self.extract_highlights(hit) if with_highlights else [],
+                highlights=self.extract_highlights(hit, query) if with_highlights else [],
             )
             results.append(result)
 
