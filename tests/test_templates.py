@@ -60,3 +60,38 @@ class NoTemplateCommentLeakTest(TestCase):
         body = response.content.decode()
         for leak in LEAKS:
             self.assertNotIn(leak, body, f"search_results: на страницу попал {leak}")
+
+
+class BrandAndNavigationTest(TestCase):
+    """Логотип, подвал и подписи в панели — часть интерфейса, а не украшение.
+
+    Логотип уже пропадал при переделке оформления, и заметил это человек, а не
+    проверка. Теперь на это есть тест.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+
+    def test_dashboard_has_logo_footer_and_labelled_navigation(self):
+        self.client.force_login(self.user)
+        body = self.client.get(reverse("dashboard")).content.decode()
+
+        self.assertIn("logo.jpeg", body, "логотип пропал из шапки")
+        self.assertIn('class="topbar"', body)
+        self.assertIn('class="foot"', body, "подвал пропал")
+        for label in ("Поиск", "Документы", "Создать", "История", "Выйти"):
+            self.assertIn(label, body, f"в панели переходов нет подписи «{label}»")
+
+    def test_login_page_has_logo_and_footer(self):
+        body = self.client.get(reverse("login")).content.decode()
+
+        self.assertIn("logo.jpeg", body)
+        self.assertIn('class="foot"', body)
+        self.assertIn("Регистрация", body, "из подвала пропала ссылка на регистрацию")
+
+    def test_dashboard_explains_itself(self):
+        self.client.force_login(self.user)
+        body = self.client.get(reverse("dashboard")).content.decode()
+        self.assertIn("Приватные документы видите только вы", body)

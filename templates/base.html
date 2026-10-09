@@ -40,6 +40,15 @@
 <div id="offline-banner" class="banner" hidden>Нет связи с сервером — изменения не сохраняются.</div>
 
 <main class="{% if not user.is_authenticated %}no-nav{% endif %}">
+    <header class="topbar">
+        <a href="{% url 'index' %}">
+            <img src="{% static 'images/logo.jpeg' %}" alt="Логотип">
+            <span class="titles">
+                <span class="name">Поиск документов</span>
+                <span class="sub">{% if user.is_authenticated %}{{ user.email }}{% else %}поиск по вашим документам{% endif %}</span>
+            </span>
+        </a>
+    </header>
     {% if messages %}
         {% for message in messages %}
             <div class="flash {{ message.tags }}" role="status">{{ message }}</div>
@@ -48,9 +57,19 @@
 
     {% block content %}{% endblock %}
 
-    <p class="muted small" style="margin-top:28px">
-        Поиск документов — Django, Elasticsearch, HTMX
-    </p>
+    <footer class="foot">
+        <img src="{% static 'images/logo.jpeg' %}" alt="">
+        <span>Поиск документов — Django, Elasticsearch, HTMX</span>
+        {% if user.is_authenticated %}
+            <a href="{% url 'index' %}">Поиск</a>
+            <a href="{% url 'dashboard' %}">Мои документы</a>
+            <a href="{% url 'search_history' %}">История</a>
+            <a href="{% url 'document_create' %}">Создать документ</a>
+        {% else %}
+            <a href="{% url 'login' %}">Вход</a>
+            <a href="{% url 'register' %}">Регистрация</a>
+        {% endif %}
+    </footer>
 </main>
 
 {% if user.is_authenticated %}
@@ -59,15 +78,15 @@
    сверху справа на широком экране. {% endcomment %}
 <nav class="nav">
     <a href="{% url 'index' %}" title="Поиск" aria-label="Поиск"
-       class="{% if request.path == '/' %}is-active{% endif %}">{% icon "search" 22 %}</a>
+       class="{% if request.path == '/' %}is-active{% endif %}">{% icon "search" 22 %}<span class="label">Поиск</span></a>
     <a href="{% url 'dashboard' %}" title="Мои документы" aria-label="Мои документы"
-       class="{% if '/dashboard' in request.path %}is-active{% endif %}">{% icon "docs" 22 %}</a>
+       class="{% if '/dashboard' in request.path %}is-active{% endif %}">{% icon "docs" 22 %}<span class="label">Документы</span></a>
     <a href="{% url 'document_create' %}" title="Создать документ" aria-label="Создать документ"
-       class="nav-add {% if '/documents/create' in request.path %}is-active{% endif %}">{% icon "plus" 22 %}</a>
+       class="nav-add {% if '/documents/create' in request.path %}is-active{% endif %}">{% icon "plus" 22 %}<span class="label">Создать</span></a>
     <a href="{% url 'search_history' %}" title="История поиска" aria-label="История поиска"
-       class="{% if '/search/history' in request.path %}is-active{% endif %}">{% icon "clock" 22 %}</a>
-    <button type="button" id="theme-toggle" title="Тема оформления" aria-label="Тема оформления">{% icon "theme" 22 %}</button>
-    <a href="{% url 'logout' %}" title="Выйти" aria-label="Выйти">{% icon "logout" 22 %}</a>
+       class="{% if '/search/history' in request.path %}is-active{% endif %}">{% icon "clock" 22 %}<span class="label">История</span></a>
+    <button type="button" id="theme-toggle" title="Тема оформления" aria-label="Тема оформления">{% icon "theme" 22 %}<span class="label">Тема</span></button>
+    <a href="{% url 'logout' %}" title="Выйти" aria-label="Выйти">{% icon "logout" 22 %}<span class="label">Выйти</span></a>
 </nav>
 {% endif %}
 

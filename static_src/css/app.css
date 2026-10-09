@@ -413,3 +413,43 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
   .spinner { animation: none; border-top-color: var(--panel-light); }
 }
+
+/* --- Шапка с логотипом ---
+   Логотип вернулся: приложение узнаётся по собаке, а не по подписи, и без него
+   страница выглядит казённой. Он же стоит в подвале. */
+.topbar { margin: 0 0 20px; }
+.topbar a { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+.topbar img {
+  width: 48px; height: 48px; border-radius: 14px; object-fit: cover;
+  box-shadow: var(--shadow-small);
+}
+.topbar .titles { display: flex; flex-direction: column; }
+.topbar .name { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; }
+.topbar .sub { font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+
+/* --- Подписи в панели переходов ---
+   Значки поиска и документов похожи: без подписи панель приходится угадывать,
+   и «Мои документы» легко не найти. */
+.nav a, .nav button { flex-direction: column; gap: 3px; }
+.nav .label { font-size: 11px; font-weight: 600; letter-spacing: .01em; }
+
+/* --- Подвал --- */
+.foot {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
+  margin-top: 30px; padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted); font-size: 13.5px;
+}
+.foot img { width: 30px; height: 30px; border-radius: 9px; object-fit: cover; }
+.foot a { color: var(--text-soft); text-decoration: none; }
+.foot a:hover { color: var(--text); text-decoration: underline; }
+
+.hello { margin: -6px 0 18px; font-size: 15px; color: var(--text-soft); }
+
+@media (min-width: 860px) {
+  /* На широком экране подпись помещается рядом со значком, и панель читается
+     как обычное меню, а не как ряд непонятных квадратов. */
+  .nav a, .nav button { flex-direction: row; gap: 8px; width: auto; padding: 0 14px; }
+  .nav .label { font-size: 13.5px; }
+  .topbar { margin-bottom: 24px; }
+}
