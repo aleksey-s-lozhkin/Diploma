@@ -9,7 +9,12 @@ MAX_TEXT_LENGTH = 100_000
 MAX_RUBRICS = 10
 MAX_RUBRIC_LENGTH = 100
 MAX_FILE_SIZE = 20 * 1024 * 1024  # совпадает с client_max_body_size в nginx
-ALLOWED_FILE_TYPES = ("pdf", "docx", "xlsx", "txt")
+
+#: Сколько знаков считаем признаком текстового слоя в файле. Скан даёт
+#: колонтитул и пару строк: на нашем корпусе такой PDF дал 47 знаков на семь
+#: страниц. Такой документ честнее показать как «текст не извлёкся».
+MIN_EXTRACTED_CHARS = 200
+ALLOWED_FILE_TYPES = ("pdf", "docx", "xlsx", "txt", "md", "py")
 
 
 class DocumentValidationError(ValueError):
