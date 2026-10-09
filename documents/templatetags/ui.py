@@ -44,6 +44,12 @@ ICONS = {
     "chevron-right": '<path d="M10 6l6 6-6 6"/>',
     "tag": '<path d="M11 3.5H5.5A1.5 1.5 0 0 0 4 5v5.5l9.5 9.5a1.5 1.5 0 0 0 2.1 0l4.4-4.4a1.5 1.5 0 0 0 0-2.1z"/><path d="M8 8h.01"/>',
     "user": '<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/>',
+    "sun": (
+        '<circle cx="12" cy="12" r="4"/><path d="M12 3v2"/><path d="M12 19v2"/><path d="M3 12h2"/>'
+        '<path d="M19 12h2"/><path d="M5.6 5.6l1.4 1.4"/><path d="M17 17l1.4 1.4"/>'
+        '<path d="M18.4 5.6L17 7"/><path d="M7 17l-1.4 1.4"/>'
+    ),
+    "moon": '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
     "theme": '<circle cx="12" cy="12" r="4"/><path d="M12 3v1.5"/><path d="M12 19.5V21"/><path d="M3 12h1.5"/><path d="M19.5 12H21"/><path d="M5.6 5.6l1 1"/><path d="M17.4 17.4l1 1"/><path d="M18.4 5.6l-1 1"/><path d="M6.6 17.4l-1 1"/>',
 }
 

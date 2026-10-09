@@ -203,9 +203,14 @@ class DashboardView(View):
 
         total_searches = SearchHistory.objects.filter(user=request.user).count()
 
+        # Фильтры и страницы подменяют только список. Если на такой запрос
+        # отдать всю страницу, она вложится в свой же контейнер: на экране
+        # появятся вторые шапка, логотип и подвал.
+        template = "partials/dashboard_content.html" if getattr(request, "htmx", False) else "dashboard.html"
+
         return render(
             request,
-            "dashboard.html",
+            template,
             {
                 "documents": documents,
                 "total_searches": total_searches,

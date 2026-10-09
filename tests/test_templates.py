@@ -80,7 +80,7 @@ class BrandAndNavigationTest(TestCase):
 
         self.assertIn("logo.jpeg", body, "логотип пропал из шапки")
         self.assertIn('class="topbar"', body)
-        self.assertIn('class="foot"', body, "подвал пропал")
+        self.assertIn('class="foot', body, "подвал пропал")
         for label in ("Поиск", "Документы", "Создать", "История", "Выйти"):
             self.assertIn(label, body, f"в панели переходов нет подписи «{label}»")
 
@@ -88,7 +88,7 @@ class BrandAndNavigationTest(TestCase):
         body = self.client.get(reverse("login")).content.decode()
 
         self.assertIn("logo.jpeg", body)
-        self.assertIn('class="foot"', body)
+        self.assertIn('class="foot', body)
         self.assertIn("Регистрация", body, "из подвала пропала ссылка на регистрацию")
 
     def test_dashboard_explains_itself(self):
@@ -109,3 +109,46 @@ class StaticVersionTest(TestCase):
 
         self.assertRegex(body, r"css/app\.css\?v=\d+")
         self.assertRegex(body, r"js/htmx\.min\.js\?v=\d+")
+
+
+class LayoutRegressionTest(TestCase):
+    """Три поломки, которые нашлись на боевом глазами.
+
+    Каждая тихая: страница отдаёт 200, тесты про содержимое проходят, а на
+    экране — вторая шапка, подвал посреди страницы и непонятная кнопка темы.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.client.force_login(self.user)
+
+    def test_htmx_dashboard_returns_only_the_list(self):
+        """Фильтры подменяют контейнер: в ответе не должно быть целой страницы."""
+        response = self.client.get(reverse("dashboard"), {"show_public": "true"}, HTTP_HX_REQUEST="true")
+        body = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="dashboard-container"', body)
+        self.assertNotIn("logo.jpeg", body, "в подменяемый кусок попала шапка с логотипом")
+        self.assertNotIn("<nav", body, "в подменяемый кусок попала панель переходов")
+        self.assertNotIn("<footer", body, "в подменяемый кусок попал подвал")
+
+    def test_htmx_dashboard_still_pushes_url(self):
+        response = self.client.get(reverse("dashboard"), HTTP_HX_REQUEST="true")
+        self.assertContains(response, 'hx-push-url="true"')
+
+    def test_footer_sits_after_main(self):
+        """Подвал вне main — иначе он не прижимается к низу окна."""
+        body = self.client.get(reverse("index")).content.decode()
+
+        self.assertLess(body.index("</main>"), body.index('class="foot'), "подвал остался внутри main")
+
+    def test_theme_button_shows_current_mode(self):
+        body = self.client.get(reverse("dashboard")).content.decode()
+
+        for mode in ("only-auto", "only-light", "only-dark"):
+            self.assertIn(mode, body, f"у кнопки темы нет варианта {mode}")
+        for label in ("Авто", "Светлая", "Тёмная"):
+            self.assertIn(label, body, f"режим темы не подписан: {label}")

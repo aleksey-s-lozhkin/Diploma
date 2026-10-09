@@ -57,7 +57,9 @@
 
     {% block content %}{% endblock %}
 
-    <footer class="foot">
+</main>
+
+    <footer class="foot {% if not user.is_authenticated %}no-nav{% endif %}">
         <img src="{% static 'images/logo.jpeg' %}" alt="">
         <span>Поиск документов — Django, Elasticsearch, HTMX</span>
         {% if user.is_authenticated %}
@@ -70,7 +72,6 @@
             <a href="{% url 'register' %}">Регистрация</a>
         {% endif %}
     </footer>
-</main>
 
 {% if user.is_authenticated %}
 {% comment %} Заголовка с названием и почтой нет: он занимал полосу и не сообщал ничего,
@@ -85,7 +86,14 @@
        class="nav-add {% if '/documents/create' in request.path %}is-active{% endif %}">{% icon "plus" 22 %}<span class="label">Создать</span></a>
     <a href="{% url 'search_history' %}" title="История поиска" aria-label="История поиска"
        class="{% if '/search/history' in request.path %}is-active{% endif %}">{% icon "clock" 22 %}<span class="label">История</span></a>
-    <button type="button" id="theme-toggle" title="Тема оформления" aria-label="Тема оформления">{% icon "theme" 22 %}<span class="label">Тема</span></button>
+    <button type="button" id="theme-toggle" title="Тема оформления: нажмите, чтобы сменить" aria-label="Тема оформления">
+        {% comment %} Режим виден по значку и подписи, а не только по всплывающей подсказке:
+           какой сейчас режим, надо понимать с одного взгляда. Переключает их
+           CSS по data-theme-mode, который ставит скрипт в head. {% endcomment %}
+        <span class="mode only-auto">{% icon "theme" 22 %}<span class="label">Авто</span></span>
+        <span class="mode only-light">{% icon "sun" 22 %}<span class="label">Светлая</span></span>
+        <span class="mode only-dark">{% icon "moon" 22 %}<span class="label">Тёмная</span></span>
+    </button>
     <a href="{% url 'logout' %}" title="Выйти" aria-label="Выйти">{% icon "logout" 22 %}<span class="label">Выйти</span></a>
 </nav>
 {% endif %}
