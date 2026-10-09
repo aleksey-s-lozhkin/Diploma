@@ -172,3 +172,17 @@ POST /search/results/ (или /api/search/)
   близость), поэтому сравнивать `score` между разными значениями `source`
   нельзя. Порог отсечения настраивается в одном месте — `VECTOR_MIN_SCORE` в
   `documents/views/views_retrieve.py`.
+
+---
+
+## Соседние проекты
+
+DocSearch — поисковый слой для двух других проектов: чата **Самогон** и
+тренажёра памяти **лапот**. Картина целиком, с репозиториями, доменами и
+общими решениями:
+
+<https://github.com/aleksey-s-lozhkin/lapot/blob/main/docs/PROJECTS.md>
+
+Форма, в которой поиск отдаёт результат потребителям, — в
+[SEARCH-CONTRACT.md](SEARCH-CONTRACT.md). Качество извлечения из PDF —
+в [PDF-EXTRACTION.md](PDF-EXTRACTION.md).
