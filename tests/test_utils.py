@@ -2,6 +2,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from documents.constants import MIN_EXTRACTED_CHARS
@@ -193,3 +194,24 @@ class SourceFilesAndScanTest(TestCase):
         """Порог, по которому документ считается сканом без текстового слоя."""
         self.assertEqual(MIN_EXTRACTED_CHARS, 200)
         self.assertLess(len("# Считаем количество вхождений элемента y"), MIN_EXTRACTED_CHARS)
+
+
+class ReextractCommandTest(TestCase):
+    """Команда обновляет текст, когда он изменился, даже если стал короче."""
+
+    def test_changed_shorter_text_is_updated(self):
+        from django.core.management import call_command
+
+        from documents.models import Document
+
+        user = get_user_model().objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        document = Document.objects.create(user=user, text="старый мусорный текст " * 20, file_name="x.md")
+
+        call_command("reextract_text", verbosity=0)
+
+        document.refresh_from_db()
+        # Файла нет — читать нечего, поэтому текст остаётся прежним: команда не
+        # должна затирать хороший текст пустотой.
+        self.assertIn("старый мусорный текст", document.text)
