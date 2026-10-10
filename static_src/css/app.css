@@ -493,11 +493,14 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
    экране — ещё и что приложение делает. */
 .auth { display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .auth > div { width: 100%; max-width: 460px; }
-.auth-aside { text-align: center; }
+/* На телефоне пояснение скрыто целиком: его урезанная версия (знак и название)
+   дублировала шапку — две собаки и два «Поиск документов» подряд. */
+.auth-aside { display: none; }
 .auth-aside img { width: 60px; height: 60px; border-radius: 18px; box-shadow: var(--shadow-small); }
 .auth-aside h2 { font-size: 20px; margin: 12px 0 0; }
 .auth-aside p, .auth-aside ul { display: none; }
 @media (min-width: 720px) {
+  .auth-aside { display: block; }
   .auth-aside img { width: 72px; height: 72px; border-radius: 22px; }
   .auth-aside h2 { font-size: 23px; }
   .auth-aside p { display: block; color: var(--text-soft); margin: 8px 0 0; }
