@@ -113,7 +113,7 @@ REST_FRAMEWORK = {
 # Заголовок схемы берётся из этих настроек: без них сгенерированная в CI схема
 # отличалась бы от опубликованной пустыми title и version.
 SPECTACULAR_SETTINGS = {
-    "TITLE": "DocSearch API",
+    "TITLE": "Сито API",
     "DESCRIPTION": "API для поиска по документам с аутентификацией",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,

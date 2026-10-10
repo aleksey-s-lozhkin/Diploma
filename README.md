@@ -1,6 +1,6 @@
-# DocSearch — поиск по документам
+# Сито — поиск по документам
 
-[![CI](https://github.com/aleksey-s-lozhkin/Diploma/actions/workflows/ci.yml/badge.svg)](https://github.com/aleksey-s-lozhkin/Diploma/actions/workflows/ci.yml)
+[![CI](https://github.com/aleksey-s-lozhkin/sito/actions/workflows/ci.yml/badge.svg)](https://github.com/aleksey-s-lozhkin/sito/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![Django](https://img.shields.io/badge/django-6.0-green.svg)](https://www.djangoproject.com/)
 [![Elasticsearch](https://img.shields.io/badge/elasticsearch-8.11-blue.svg)](https://www.elastic.co/)
@@ -9,7 +9,9 @@
 PDF, DOCX, XLSX или TXT либо вводит текст руками, система извлекает содержимое,
 индексирует его в Elasticsearch и ищет с русской и английской морфологией.
 
-Продакшен: **https://docsearch.pyconstrictor.ru** (хост `infra-dev`).
+Продакшен: **https://sito.pyconstrictor.ru** (хост `infra-dev`). Прежний адрес
+приложения перенаправляет на новый — пока идёт переход, оба имени живут
+одновременно, подробности в [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Что умеет
 
@@ -206,7 +208,7 @@ poetry run python manage.py issue_api_token --revoke 3      # отозвать
 ```
 
 ```bash
-curl -X POST https://docsearch.pyconstrictor.ru/api/v1/search/retrieve \
+curl -X POST https://sito.pyconstrictor.ru/api/v1/search/retrieve \
   -H "Authorization: Bearer ds_s_..." -H "Content-Type: application/json" \
   -d '{"query": "как деплоить проект", "limit": 10, "rubrics": ["devops"]}'
 ```

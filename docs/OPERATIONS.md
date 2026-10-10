@@ -9,7 +9,7 @@
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 docker inspect --format '{{json .State.Health}}' diploma-web | head -c 400
-curl -fsS https://docsearch.pyconstrictor.ru/health/ready/ | python3 -m json.tool
+curl -fsS https://sito.pyconstrictor.ru/health/ready/ | python3 -m json.tool
 ```
 
 Ответ `/health/ready/`:
@@ -21,6 +21,46 @@ curl -fsS https://docsearch.pyconstrictor.ru/health/ready/ | python3 -m json.too
 `503` и `"database": "error: ..."` — приложение действительно не работает.
 `200` с `degraded` у `redis` или `elasticsearch` — работает, но без кэша или
 поиска; это не повод перезапускать контейнер.
+
+## Переходный период: старый домен ещё работает
+
+Приложение переименовано, но **прежний адрес `https://docsearch.pyconstrictor.ru`
+отвечает** — он отдаёт редирект на `https://sito.pyconstrictor.ru`. Это не
+недоделка, а условие перехода: у людей сайт может быть открыт или лежать в
+закладках, и без редиректа они получили бы ошибку сертификата вместо страницы.
+Редирект живёт в `deploy/nginx/docsearch-redirect.conf` (на сервере —
+`/srv/config/nginx/conf.d/docsearch-redirect.conf`); на стороне приложения для
+него нужно второе имя в трёх списках окружения.
+
+Что из этого следует при эксплуатации:
+
+- в `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` и `CORS_ALLOWED_ORIGINS`
+  (`/srv/config/env/diploma.env`) стоят **оба имени**. Снять старое раньше
+  срока нельзя: Django ответит `DisallowedHost` на запрос, который nginx уже
+  принял по старому имени, — то есть переход сломается ровно у тех, ради кого
+  он делается;
+- **сертификат прежнего имени не удалять, пока работает редирект.** Редирект
+  возможен только после TLS-рукопожатия по старому имени, а рукопожатию нужен
+  действующий сертификат в `/srv/data/letsencrypt/live/docsearch.pyconstrictor.ru/`.
+  Поэтому имя оставлено в хранилище и в продлении;
+- рядом живут два vhost'а: `sito.pyconstrictor.ru.conf` и переходный
+  `docsearch-redirect.conf`. Во втором — и редирект, и ACME-путь для продления
+  сертификата прежнего имени, который обязан оставаться доступным по HTTP без
+  редиректа, иначе продление сломается. Как выпускается сертификат нового
+  домена — `docs/DEPLOY.md`, раздел 4.
+
+Проверка, что переход идёт правильно: старый адрес отвечает редиректом, новый —
+`200`.
+
+```bash
+curl -sS -o /dev/null -w 'старый: %{http_code} -> %{redirect_url}\n' \
+  https://docsearch.pyconstrictor.ru/health/
+curl -fsS https://sito.pyconstrictor.ru/health/ready/ | python3 -m json.tool
+```
+
+Заканчивает переход владелец, и снимается он **целиком**: старое имя из трёх
+списков окружения, старый vhost и его сертификат. По отдельности снимать
+опасно — останется либо `DisallowedHost`, либо ошибка сертификата.
 
 ## Логи
 
@@ -53,11 +93,11 @@ docker exec nginx sh -c 'tail -50 /var/log/nginx/access.log'
 
 ```bash
 # 1. Файл доходит до Django? 403 (нет CSRF) — доходит, 413 — рубит nginx
-curl -sS -o /dev/null -w '%{http_code}\n' --resolve docsearch.pyconstrictor.ru:443:127.0.0.1 \
-  -X POST --data-binary @файл https://docsearch.pyconstrictor.ru/documents/create/
+curl -sS -o /dev/null -w '%{http_code}\n' --resolve sito.pyconstrictor.ru:443:127.0.0.1 \
+  -X POST --data-binary @файл https://sito.pyconstrictor.ru/documents/create/
 
 # 2. Есть ли лимит в vhost
-docker exec nginx grep -n client_max_body_size /etc/nginx/conf.d/docsearch.pyconstrictor.ru.conf
+docker exec nginx grep -n client_max_body_size /etc/nginx/conf.d/sito.pyconstrictor.ru.conf
 
 # 3. Доступен ли Elasticsearch из приложения
 docker exec diploma-web python -c "
@@ -200,10 +240,15 @@ docker run --rm -v /srv/data/certbot:/var/www/certbot \
 ### Сертификаты
 
 Все домены хоста берут сертификаты из `/srv/data/letsencrypt`, который продлевает
-cron пользователя деплоя (см. `docs/DEPLOY.md`): `docsearch`, `lapot`, `sam`,
+cron пользователя деплоя (см. `docs/DEPLOY.md`): `sito`, `lapot`, `sam`,
 `cloud` и общий на `pyconstrictor.ru`, `www.pyconstrictor.ru` и
 `equip.pyconstrictor.ru`. Каталог `/srv/config/ssl` больше не используется —
 файлы там остались от прежней схемы, ссылок на них в vhost'ах нет.
+
+Сертификат прежнего имени (`docsearch.pyconstrictor.ru`) на время перехода
+остаётся в хранилище и в продлении: без него не состоится TLS-рукопожатие по
+старому адресу, а значит и редирект на новый. Подробнее — раздел «Переходный
+период» выше.
 
 ```bash
 # Сроки всех сертификатов хранилища

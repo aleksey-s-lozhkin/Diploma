@@ -1,4 +1,4 @@
-# Память проекта DocSearch
+# Память проекта Сито
 
 Файл читается в начале каждой сессии. Здесь только то, что нельзя вывести из
 кода: правила работы, окружение и грабли, которые уже стоили времени.
@@ -20,7 +20,13 @@
 
 Поиск по документам: Django + DRF + Elasticsearch + HTMX. Английский язык
 интерфейса не нужен, весь текст — русский. Дипломный проект, но эксплуатируется
-по-настоящему: боевой домен `docsearch.pyconstrictor.ru`.
+по-настоящему: боевой домен `sito.pyconstrictor.ru`.
+
+Приложение **переименовано** (10 октября 2026): имя — **Сито**, латиницей
+`sito`, репозиторий `aleksey-s-lozhkin/sito`. Идёт переходный период: прежний
+домен ещё отвечает редиректом, поэтому в `ALLOWED_HOSTS`,
+`CSRF_TRUSTED_ORIGINS` и `CORS_ALLOWED_ORIGINS` пока **оба имени**. Убирать
+старое раньше срока нельзя — `docs/DEPLOY.md`, раздел «Переходный период».
 
 ## Проверки
 
@@ -40,7 +46,7 @@ manage.py spectacular --file docs/api/openapi.json --format openapi-json   # с�
 export ANDROID_HOME=~/Library/Android/sdk
 $ANDROID_HOME/emulator/emulator -avd Pixel_9 -no-window -no-audio -gpu swiftshader_indirect &
 $ANDROID_HOME/platform-tools/adb wait-for-device
-$ANDROID_HOME/platform-tools/adb shell am start -a android.intent.action.VIEW -d "https://docsearch.pyconstrictor.ru/login/"
+$ANDROID_HOME/platform-tools/adb shell am start -a android.intent.action.VIEW -d "https://sito.pyconstrictor.ru/login/"
 $ANDROID_HOME/platform-tools/adb exec-out screencap -p > /tmp/shot.png
 ```
 
