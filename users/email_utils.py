@@ -9,7 +9,7 @@ def send_verification_email(user, request):
     token = user.generate_verification_token()
     verification_url = request.build_absolute_uri(reverse("verify_email", args=[token]))
 
-    subject = "Подтверждение email - Поиск документов"
+    subject = "Подтверждение email - Сито"
 
     # HTML письмо
     html_message = f"""
@@ -42,7 +42,7 @@ def send_verification_email(user, request):
             <p>{verification_url}</p>
             <p>Если вы не регистрировались на нашем сайте, просто проигнорируйте это письмо.</p>
             <div class="footer">
-                <p>С уважением,<br>Команда Поиск документов</p>
+                <p>С уважением,<br>Команда Сито</p>
             </div>
         </div>
     </body>
@@ -66,7 +66,7 @@ def send_password_reset_email(user, request):
     token = user.generate_reset_token()
     reset_url = request.build_absolute_uri(reverse("password_reset_confirm", args=[token]))
 
-    subject = "Сброс пароля - Поиск документов"
+    subject = "Сброс пароля - Сито"
 
     html_message = f"""
     <!DOCTYPE html>
@@ -100,7 +100,7 @@ def send_password_reset_email(user, request):
             <p class="warning">Ссылка действительна в течение 1 часа.</p>
             <p>Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.</p>
             <div class="footer">
-                <p>С уважением,<br>Команда Поиск документов</p>
+                <p>С уважением,<br>Команда Сито</p>
             </div>
         </div>
     </body>
