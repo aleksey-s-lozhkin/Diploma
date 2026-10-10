@@ -11,6 +11,7 @@ from documents.views.views_web import (
     GetRubricsView,
     IndexView,
     LogoutView,
+    SearchFragmentView,
     SearchHistoryView,
     SearchResultsView,
     TogglePublicView,
@@ -24,6 +25,7 @@ urlpatterns = [
     path("", never_cache(IndexView.as_view()), name="index"),
     # Страницы требующие актуальных данных (без кэша)
     path("dashboard/", never_cache(DashboardView.as_view()), name="dashboard"),
+    path("search/fragment/", never_cache(SearchFragmentView.as_view()), name="search_fragment"),
     path("search/results/", never_cache(SearchResultsView.as_view()), name="search_results"),
     path("search/history/", never_cache(SearchHistoryView.as_view()), name="search_history"),
     path("search/history/clear/", never_cache(ClearHistoryView.as_view()), name="clear_history"),

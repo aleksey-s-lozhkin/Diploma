@@ -568,3 +568,18 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
   color: var(--text-muted); margin: 20px 0 8px;
 }
 .day:first-of-type { margin-top: 0; }
+
+/* --- Отрывок «по существу» от модели ---
+   Догружается отдельно: сначала список от Elasticsearch, потом уточнение. */
+.answer-slot:empty { display: none; }
+.answer {
+  margin: 8px 0 0; padding: 10px 12px;
+  background: var(--primary-soft); border-radius: var(--radius-small);
+  font-size: 15px;
+}
+.answer-tag {
+  display: inline-block; margin-right: 8px; padding: 1px 7px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--on-primary); background: var(--primary); border-radius: 999px;
+  vertical-align: 1px;
+}
