@@ -93,3 +93,33 @@ class SummaryInUiTest(TestCase):
         body = self.client.get(reverse("dashboard")).content.decode()
 
         self.assertIn("Пишем про словари", body, "без описания в карточке должен быть текст")
+
+
+class TestOneSharedModel:
+    """Все запросы к модели идут на **одну** модель.
+
+    На видеокарте 8 ГБ две модели не помещаются:
+
+        qwen3:8b при ctx 8192   6,19 ГБ
+        qwen3:4b-instruct       3,18 ГБ в видеопамяти
+
+    Загружая меньшую, сервис вытесняет общую — и следующий гость Самогона
+    или человек в лапте ждёт двадцать секунд загрузки. Замер показывал,
+    что меньшая модель на отрывке быстрее и точнее, но вытеснения в том
+    замере не было, а цена его больше выигрыша: отрывок кешируется на
+    сутки, а вытеснение бьёт по каждому обращению.
+
+    Условие записано в lapot/docs/decisions/0010.
+    """
+
+    def test_fragment_uses_the_shared_model(self):
+        from documents.services.summary_service import DEFAULT_FRAGMENT_MODEL, DEFAULT_MODEL
+
+        assert (
+            DEFAULT_FRAGMENT_MODEL == DEFAULT_MODEL
+        ), "отрывок ходит в свою модель — это вытеснит общую с лаптем и Самогоном"
+
+    def test_shared_model_is_qwen3_8b(self):
+        from documents.services.summary_service import DEFAULT_MODEL
+
+        assert DEFAULT_MODEL == "qwen3:8b"
