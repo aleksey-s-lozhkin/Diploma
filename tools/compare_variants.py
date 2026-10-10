@@ -5,27 +5,24 @@ Elasticsearch и к самому проекту):
 
     docker exec -w /app -e PYTHONPATH=/app diploma-web python /tmp/compare_variants.py
 
-Зачем это, а не «просто добавить вектора». У поиска есть несколько ручек,
-и заранее неизвестно, какая из них решает задачу. Полнотекст можно ослабить
+Зачем это, а не «просто добавить вектора». У поиска несколько ручек, и
+заранее неизвестно, какая решает задачу. Полнотекст можно ослабить
 (`operator`, `minimum_should_match`), можно добавить вектора, можно сложить
 одно с другим. **Каждый вариант стоит времени, и выбрать надо замером.**
 
 ## Метрика одна: правильный документ в топ-3
 
 Никаких «средних очков». Очки BM25 и косинус **несравнимы** — разные шкалы,
-и среднее по ним не значит ничего (об этом же сказано в
-`docs/ARCHITECTURE.md`). Считаем попадания, и только их.
+и среднее по ним не значит ничего (об этом же в `docs/ARCHITECTURE.md`).
 
 ## Два набора вопросов
 
-* **дословные** — слова вопроса есть в тексте. Их полнотекст находит
-  идеально, и **ломать это нельзя**: вариант, который выиграл на
-  перефразированных, но потерял дословные, не годится;
+* **дословные** — слова вопроса есть в тексте. Полнотекст находит их
+  идеально, и **ломать это нельзя**;
 * **перефразированные** — слова другие, смысл тот же. Ради них всё и
   затевается.
 
-Разделение обязательно. Без него «стало 12 из 15» не говорит, что именно
-улучшилось, а что сломалось.
+Без разделения «стало 12 из 15» не говорит, что улучшилось, а что сломалось.
 """
 
 import json
@@ -37,7 +34,7 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
-from elasticsearch_dsl import Search  # noqa: E402
+from elasticsearch_dsl import Q, Search, connections  # noqa: E402
 
 from documents.models import ApiToken  # noqa: E402
 
@@ -61,23 +58,34 @@ QUESTIONS = [
     ("как убрать пробелы по краям строки", "Строки", "paraphrase"),
 ]
 
-#: Сколько отрывков берём на вариант. Топ-3 считается по первым трём.
+#: Сколько отрывков берём на вариант и сколько считаем «попал».
 FETCH = 20
 TOP_K = 3
+
+#: Имя поля с вектором. Задано при создании маппинга (`documents/documents.py`).
+VECTOR_FIELD = "dense_vector"
 
 
 def _visible(token) -> list:
     """Кому что видно — следствие токена, а не параметр запроса (§2 контракта)."""
-    from elasticsearch_dsl import Q
-
     clauses = [Q("term", is_public=True)]
     if token.scope == ApiToken.SCOPE_PERSONAL and token.user_id:
         clauses.append(Q("term", user_id=token.user_id))
     return clauses
 
 
-def _text_only(token, query, index, *, operator, msm):
-    """Полнотекстовый вариант с заданными ручками."""
+def _titles(search, limit=FETCH) -> list:
+    """Заголовки первых `limit` попаданий обычного поиска."""
+    titles = []
+    for hit in search.execute():
+        titles.append(getattr(hit, "title", "") or "")
+        if len(titles) >= limit:
+            break
+    return titles
+
+
+def _text_titles(token, query, index, *, operator, msm, size=FETCH) -> list:
+    """Полнотекстовый поиск с заданными ручками."""
     search = Search(index=index)
     search = search.query(
         "multi_match",
@@ -88,71 +96,114 @@ def _text_only(token, query, index, *, operator, msm):
         minimum_should_match=msm,
     )
     search = search.query("bool", should=_visible(token), minimum_should_match=1)
-    return search
+    search = search[:size]
+    return _titles(search, size)
 
 
-def _knn_only(token, query, index, *, k=20):
-    """Только вектора. Нужен `dense_vector` в маппинге и эмбеддинг запроса."""
-    from documents.services.embedding_service import embed_text
+def _knn_titles(token, query, index, *, k=FETCH) -> list:
+    """Векторный поиск как он реально работает в этом Elasticsearch.
 
-    vector = embed_text(query)
-    search = Search(index=index)
-    search = search.query(
-        "knn",
-        field="embedding",
-        query_vector=vector,
-        k=k,
-        num_candidates=max(k * 10, 100),
-    )
-    search = search.query("bool", should=_visible(token), minimum_should_match=1)
-    return search
+    Три вещи, проверенные на живом индексе и **неочевидные**:
 
+    1. `knn` — **не clause**, а параметр верхнего уровня. Через
+       `search.query("knn", ...)` elasticsearch-dsl отвечает
+       `UnknownDslObject`, а `.extra(knn=...)` роняет клиент: в замке
+       версия 7.17, аргумент появился позже. Поэтому запрос идёт телом.
+    2. **Фильтр обязан быть ВНУТРИ `knn`.** Проверено: с top-level `query`
+       фильтр видимости не действует и возвращаются чужие куски. Для
+       проекта, где изоляция документов держится на ADR-0001, это не
+       мелочь, а прямой доступ к чужому.
+    3. В `_source` просим только заголовок: тянем два десятка кусков по
+       1,8 КБ, а нужен из них один заголовок.
+    """
+    from documents.services.embedding_service import embed_query
 
-#: Варианты: имя → функция, строящая запрос. Порядок — как в плане.
-VARIANTS = {
-    "bm25_and": lambda t, q, i: _text_only(t, q, i, operator="and", msm="70%"),
-    "bm25_or": lambda t, q, i: _text_only(t, q, i, operator="or", msm="70%"),
-    "bm25_loose": lambda t, q, i: _text_only(t, q, i, operator="or", msm="50%"),
-    # Варианты с векторами подключаются, когда есть эмбеддинги.
-    "knn_only": lambda t, q, i: _knn_only(t, q, i),
-}
-
-
-def _run_variant_plain(token, name, factory, index) -> dict:
-    """Вариант, который Elasticsearch выполняет одним запросом."""
-    hits = {}
-    for query, expected, kind in QUESTIONS:
-        try:
-            response = factory(token, query, index).execute()
-        except Exception as exc:  # noqa: BLE001
-            hits[query] = (kind, expected, 0, f"{type(exc).__name__}")
-            continue
-
-        titles = []
-        for hit in response:
-            titles.append(getattr(hit, "title", "") or "")
-            if len(titles) >= TOP_K:
-                break
-
-        position = 0
-        for at, title in enumerate(titles, start=1):
-            if expected.lower() in str(title).lower():
-                position = at
-                break
-        hits[query] = (kind, expected, position, None)
-    return hits
+    body = {
+        "knn": {
+            "field": VECTOR_FIELD,
+            "query_vector": embed_query(query),
+            "k": k,
+            "num_candidates": max(k * 10, 100),
+            "filter": {
+                "bool": {
+                    "should": [clause.to_dict() for clause in _visible(token)],
+                    "minimum_should_match": 1,
+                }
+            },
+        },
+        "_source": ["title"],
+        "size": k,
+    }
+    response = connections.get_connection().search(index=index, body=body)
+    return [(hit.get("_source") or {}).get("title") or "" for hit in response["hits"]["hits"]]
 
 
-def _score(hits: dict) -> dict:
-    """Свести попадания в две строки: дословные и перефразированные."""
-    out = {}
-    for kind in ("literal", "paraphrase"):
-        sub = [v for v in hits.values() if v[0] == kind]
-        out[kind] = sum(1 for v in sub if 0 < v[2] <= TOP_K)
-        out[kind + "_total"] = len(sub)
-    out["total"] = out["literal"] + out["paraphrase"]
-    out["total_all"] = out["literal_total"] + out["paraphrase_total"]
-    return out
+def _rrf(lists: list, *, k: int = 60) -> list:
+    """Слияние по рангам (Reciprocal Rank Fusion).
+
+    Почему по рангам, а не по очкам: BM25 и косинус живут на **разных
+    шкалах**, и складывать их напрямую — складывать метры с килограммами.
+    RRF складывает `1 / (k + место)`, то есть **места**, и нормировка не
+    нужна вовсе.
+    """
+    scores: dict = {}
+    for ranked in lists:
+        for rank, title in enumerate(ranked, start=1):
+            if not title:
+                continue
+            scores[title] = scores.get(title, 0.0) + 1.0 / (k + rank)
+    return [title for title, _ in sorted(scores.items(), key=lambda kv: -kv[1])]
+
+
+def _weighted(text: list, knn: list, *, alpha: float) -> list:
+    """Слияние по очкам с нормировкой — для сравнения с RRF.
+
+    Очки нормируются в [0, 1] **внутри своего списка**: сравнивать
+    абсолютные значения нельзя, но относительные в пределах одного запроса
+    осмысленны. `alpha` — вес полнотекста, `1 - alpha` — вес векторов.
+    """
+
+    def norm(items):
+        total = max(len(items), 1)
+        return {title: (total - rank) / total for rank, title in enumerate(items, 1) if title}
+
+    left, right = norm(text), norm(knn)
+    scores: dict = {}
+    for title in set(left) | set(right):
+        scores[title] = alpha * left.get(title, 0.0) + (1 - alpha) * right.get(title, 0.0)
+    return [title for title, _ in sorted(scores.items(), key=lambda kv: -kv[1])]
+
+
+def _position(titles: list, expected: str) -> int:
+    """Место правильного документа в топ-3; 0 — не найден."""
+    for at, title in enumerate(titles[:TOP_K], start=1):
+        if expected.lower() in str(title).lower():
+            return at
+    return 0
+
+
+def _variants(token, index):
+    """Варианты из плана. Состав менять нельзя — он согласован."""
+
+    def loose(query):
+        return _text_titles(token, query, index, operator="or", msm="50%")
+
+    def strict(query):
+        return _text_titles(token, query, index, operator="and", msm="70%")
+
+    def vectors(query):
+        return _knn_titles(token, query, index)
+
+    return {
+        "bm25_and": strict,
+        "bm25_or": lambda q: _text_titles(token, q, index, operator="or", msm="70%"),
+        "bm25_loose": loose,
+        "knn_only": vectors,
+        # Строгий полнотекст рядом с векторами — проверить, не мешает ли он.
+        "hybrid_rrf_strict": lambda q: _rrf([strict(q), vectors(q)]),
+        "hybrid_rrf_loose": lambda q: _rrf([loose(q), vectors(q)]),
+        "hybrid_weighted": lambda q: _weighted(loose(q), vectors(q), alpha=0.5),
+    }
 
 
 def main() -> int:
@@ -162,41 +213,65 @@ def main() -> int:
         print("нет ни одного токена — сравнение невозможно")
         return 2
 
-    rows = []
-    for name, factory in VARIANTS.items():
-        hits = _run_variant_plain(token, name, factory, index)
-        rows.append((name, _score(hits), hits))
+    variants = _variants(token, index)
+    results = {}
+    detail = {}
+
+    for name, run in variants.items():
+        hits = {}
+        for query, expected, kind in QUESTIONS:
+            try:
+                titles = run(query)
+            except Exception as exc:  # noqa: BLE001
+                hits[query] = (kind, 0, f"{type(exc).__name__}: {exc}")
+                continue
+            hits[query] = (kind, _position(titles, expected), None)
+        detail[name] = hits
+
+        score = {}
+        for kind in ("literal", "paraphrase"):
+            sub = [v for v in hits.values() if v[0] == kind]
+            score[kind] = sum(1 for v in sub if v[1] > 0)
+            score[kind + "_total"] = len(sub)
+        score["total"] = score["literal"] + score["paraphrase"]
+        score["total_all"] = score["literal_total"] + score["paraphrase_total"]
+        results[name] = score
 
     print()
-    print(f"  {'вариант':<16} {'дословные':>10} {'перефраз.':>10} {'всего':>8}   индекс={index}")
-    print("  " + "─" * 58)
-    for name, score, _ in rows:
+    print(f"  {'вариант':<22} {'дословные':>10} {'перефраз.':>10} {'всего':>8}   индекс={index}")
+    print("  " + "─" * 64)
+    for name, score in results.items():
         print(
-            f"  {name:<16} {score['literal']}/{score['literal_total']:>8} "
-            f"{score['paraphrase']}/{score['paraphrase_total']:>8} "
-            f"{score['total']}/{score['total_all']:>6}"
+            f"  {name:<22} {score['literal']:>3}/{score['literal_total']:<6} "
+            f"{score['paraphrase']:>3}/{score['paraphrase_total']:<6} "
+            f"{score['total']:>3}/{score['total_all']:<4}"
         )
 
-    # Провальные вопросы: без этого таблица не говорит, ГДЕ стало лучше.
-    print("\n  Провальные в базовом варианте (перефразированные):")
-    baseline = rows[0][2] if rows else {}
-    for query, expected, kind in QUESTIONS:
+    print("\n  Перефразированные построчно (место правильного; «—» = не найден):")
+    names = list(results)
+    print(f"    {'вопрос':<40} " + " ".join(f"{n[:13]:>14}" for n in names))
+    for query, _expected, kind in QUESTIONS:
         if kind != "paraphrase":
             continue
-        position = baseline.get(query, (kind, expected, 0, None))[2]
-        if position == 0:
-            marks = []
-            for name, _, hits in rows:
-                marks.append(f"{name}={'#' + str(hits[query][2]) if hits[query][2] else '—'}")
-            print(f"    {query[:42]:<44} {'  '.join(marks)}")
+        cells = []
+        for name in names:
+            position = detail[name][query][1]
+            cells.append(f"{'#' + str(position) if position else '—':>14}")
+        print(f"    {query[:38]:<40} " + " ".join(cells))
+
+    errors = {
+        name: {q: v[2] for q, v in hits.items() if v[2]}
+        for name, hits in detail.items()
+        if any(v[2] for v in hits.values())
+    }
+    if errors:
+        print("\n  Ошибки выполнения:")
+        for name, items in errors.items():
+            for query, message in list(items.items())[:2]:
+                print(f"    {name} / {query[:28]}: {message[:90]}")
 
     print("\n  Машиночитаемо:")
-    print(
-        json.dumps(
-            {name: dict(score) for name, score, _ in rows},
-            ensure_ascii=False,
-        )
-    )
+    print(json.dumps(results, ensure_ascii=False))
     return 0
 
 
