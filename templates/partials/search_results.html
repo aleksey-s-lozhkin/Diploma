@@ -85,6 +85,7 @@
                     </div>
 
                     <div class="counts">
+                        {% if doc.highlights %}<span class="count">{{ doc.highlights|length }} совпадений</span>{% endif %}
                         <span class="count">{{ doc.created_date|date:"d.m.Y H:i" }}</span>
                         <span class="count">#{{ doc.id }}</span>
                     </div>

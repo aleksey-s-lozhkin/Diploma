@@ -224,8 +224,18 @@ class SearchService:
         # задаются на уровне всего запроса: по ним sanitize_highlight
         # восстанавливает разметку в экранированном тексте документа.
         if with_highlights:
+            # Тот же запрос уходит и в подсветку. Без этого Elasticsearch не
+            # подсвечивает нечёткие совпадения и возвращает фрагмент, вырезанный
+            # не там, где нашлось, — человек видит текст без единого выделения.
+            highlight_query = s.to_dict().get("query")
+
             s = s.highlight_options(pre_tags=[HIGHLIGHT_PRE_TAG], post_tags=[HIGHLIGHT_POST_TAG])
-            s = s.highlight("text", fragment_size=200, number_of_fragments=3)
+            s = s.highlight(
+                "text",
+                fragment_size=200,
+                number_of_fragments=3,
+                highlight_query=highlight_query,
+            )
 
         response = s.execute()
         total = response.hits.total.value

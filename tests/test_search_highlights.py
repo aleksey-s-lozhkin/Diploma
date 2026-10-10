@@ -12,6 +12,7 @@ from django.test import TestCase
 from elasticsearch_dsl import Search
 from elasticsearch_dsl.utils import AttrDict
 
+from documents.models import SearchHistory
 from documents.services.search_service import HIGHLIGHT_POST_TAG, HIGHLIGHT_PRE_TAG, SearchService, sanitize_highlight
 
 User = get_user_model()
@@ -122,3 +123,29 @@ class MarkQueryTermsTest(TestCase):
         from documents.services.search_service import mark_query_terms
 
         self.assertEqual(mark_query_terms("и он", "и"), "и он")
+
+
+class SearchHistoryRecordingTest(TestCase):
+    """История поиска должна заполняться — сейчас её писать было некому."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.client.force_login(self.user)
+
+    def test_search_is_written_to_history(self):
+        from documents.views.views_web import _remember_search
+
+        _remember_search(self.user, "договор", 3)
+        _remember_search(self.user, "договор", 3)  # дубль в пределах окна
+        _remember_search(self.user, "приказ", 1)
+
+        queries = list(SearchHistory.objects.filter(user=self.user).values_list("query", flat=True))
+        self.assertEqual(sorted(queries), ["договор", "приказ"], "дубль записан в историю")
+
+    def test_empty_query_is_not_written(self):
+        from documents.views.views_web import _remember_search
+
+        _remember_search(self.user, "   ", 0)
+        self.assertEqual(SearchHistory.objects.filter(user=self.user).count(), 0)

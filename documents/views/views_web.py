@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -48,6 +49,29 @@ class IndexView(View):
 
     def get(self, request):
         return render(request, "index.html", {"rubrics": get_cached_rubrics(request.user)})
+
+
+#: Дубль того же запроса в пределах этого времени в историю не пишем.
+HISTORY_DEDUPE_MINUTES = 10
+
+
+def _remember_search(user, query: str, results_count: int) -> None:
+    """Записать запрос в историю поиска.
+
+    История сейчас не заполняется вовсе — писать её было некому. Дубль в
+    пределах десяти минут пропускаем: страница поиска перезагружается при
+    возврате по «назад» и при открытии ссылки, и без этой проверки история
+    заполнялась бы повторами одного и того же запроса.
+    """
+    query = (query or "").strip()
+    if not query:
+        return
+
+    fresh = timezone.now() - timedelta(minutes=HISTORY_DEDUPE_MINUTES)
+    if SearchHistory.objects.filter(user=user, query=query[:500], created_at__gte=fresh).exists():
+        return
+
+    SearchHistory.objects.create(user=user, query=query[:500], results_count=results_count)
 
 
 @method_decorator(never_cache, name="dispatch")
