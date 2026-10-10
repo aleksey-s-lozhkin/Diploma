@@ -34,9 +34,20 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 django.setup()
 
+from django.conf import settings  # noqa: E402
 from elasticsearch_dsl import Q, Search, connections  # noqa: E402
 
 from documents.models import ApiToken  # noqa: E402
+
+#: Модель эмбеддингов можно задать снаружи окружением. Нужно это затем,
+#: чтобы **сравнивать модели**, а не только варианты поиска: у разных
+#: моделей разная размерность, и вектор запроса обязан считаться той же
+#: моделью, что и векторы в индексе. Иначе поиск падает на несовпадении
+#: размерности, а выглядит это как «вариант не работает».
+if os.environ.get("COMPARE_EMBED_MODEL"):
+    settings.OLLAMA_EMBED_MODEL = os.environ["COMPARE_EMBED_MODEL"]
+if os.environ.get("COMPARE_EMBED_DIMS"):
+    settings.OLLAMA_EMBED_DIMS = int(os.environ["COMPARE_EMBED_DIMS"])
 
 #: Вопросы и ожидаемые документы. **Взяты из `measure_retrieve.py` и не
 #: меняются:** подогнанный набор вопросов ничего не доказывает.
