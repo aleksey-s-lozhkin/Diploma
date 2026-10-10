@@ -80,6 +80,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
+        # Имя базы намеренно осталось прежним: снаружи его не видит никто,
+        # а переименование потребовало бы переноса данных ради косметики.
+        # Приложение теперь называется «Сито», база — нет.
         "NAME": os.getenv("POSTGRES_DB", "docsearch"),
         "USER": os.getenv("POSTGRES_USER", "postgres"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD", "postgres"),
@@ -165,7 +168,7 @@ REST_FRAMEWORK = {
 
 # API документация Swagger/OpenAPI
 SPECTACULAR_SETTINGS = {
-    "TITLE": "DocSearch API",
+    "TITLE": "Сито API",
     "DESCRIPTION": "API для поиска по документам с аутентификацией",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -278,7 +281,11 @@ CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": REDIS_URL,
-        "KEY_PREFIX": "docsearch",
+        # Префикс переименован вместе с приложением. Старые ключи становятся
+        # недостижимыми, но это безопасно: кэш — ускоритель, а не источник
+        # правды (IGNORE_EXCEPTIONS ниже), и ключи сами истекают по TIMEOUT.
+        # Номер базы Redis при этом не меняется — он закреплён за проектом.
+        "KEY_PREFIX": "sito",
         "TIMEOUT": 300,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",

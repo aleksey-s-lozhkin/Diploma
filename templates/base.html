@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token }}">
     <meta name="theme-color" content="#1a1a1a">
-    <title>{% block title %}Поиск документов{% endblock %}</title>
+    <title>{% block title %}Сито{% endblock %}</title>
 
     {% comment %} Тема ставится до первой отрисовки, иначе видно вспышку чужой темы:
        браузер успевает нарисовать страницу со светлым фоном, и только потом
@@ -16,7 +16,7 @@
        переключится. Без разделения вернуться к «как в системе» было бы нельзя. {% endcomment %}
     <script>
         (function () {
-            var saved = localStorage.getItem('docsearch-theme') || 'auto';
+            var saved = localStorage.getItem('sito-theme') || 'auto';
             var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             var theme = saved === 'auto' ? (dark ? 'dark' : 'light') : saved;
             document.documentElement.dataset.theme = theme;
@@ -26,7 +26,19 @@
         })();
     </script>
 
-    <link rel="icon" href="{% static 'images/logo.jpeg' %}">
+    {% comment %} Знак приложения вместо прежнего растрового логотипа: вектор
+       не мылится на экранах с высокой плотностью, весит меньше картинки и
+       один на все размеры.
+
+       Версия в адресе — по той же причине, что у CSS и JS: nginx отдаёт
+       статику с кешем на месяц, а имя файла при выпуске не меняется. Без
+       версии человек после выкладки видел бы во вкладке старый значок.
+
+       apple-touch-icon оставлен растром и одним размером: iOS не берёт SVG из
+       этой ссылки, а остальные размеры нужны только манифесту PWA, которого
+       у Сита пока нет — мёртвых файлов не держим. {% endcomment %}
+    <link rel="icon" type="image/svg+xml" href="{% static 'images/favicon.svg' %}?v={{ asset_version }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'images/apple-touch-icon.png' %}?v={{ asset_version }}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}?v={{ asset_version }}">
     {% comment %} htmx лежит локально: self-hosted приложение не должно зависеть от чужого
        CDN ни в работе, ни в приватности — запрос к CDN выдаёт, что вы им
@@ -42,9 +54,9 @@
 <main class="{% if not user.is_authenticated %}no-nav{% endif %}">
     <header class="topbar">
         <a href="{% url 'index' %}">
-            <img src="{% static 'images/logo.jpeg' %}" alt="Логотип">
+            {% include 'partials/sieve_mark.html' with size=48 %}
             <span class="titles">
-                <span class="name">Поиск документов</span>
+                <span class="name">Сито</span>
                 <span class="sub">{% if user.is_authenticated %}{{ user.email }}{% else %}поиск по вашим документам{% endif %}</span>
             </span>
         </a>
@@ -60,8 +72,11 @@
 </main>
 
     <footer class="foot {% if not user.is_authenticated %}no-nav{% endif %}">
-        <img src="{% static 'images/logo.jpeg' %}" alt="">
-        <span>Поиск документов — Django, Elasticsearch, HTMX</span>
+        {% comment %} Знак и здесь: подвал — последнее, что видно на странице,
+           и по нему приложение тоже узнаётся. Размер мельче шапочного: в
+           подвале он подпись, а не заголовок. {% endcomment %}
+        {% include 'partials/sieve_mark.html' with size=30 %}
+        <span>Сито — Django, Elasticsearch, HTMX</span>
         {% if user.is_authenticated %}
             <a href="{% url 'index' %}">Поиск</a>
             <a href="{% url 'dashboard' %}">Мои документы</a>
@@ -134,14 +149,14 @@
             var order = ['auto', 'light', 'dark'];
             var names = { auto: 'как в системе', light: 'светлая', dark: 'тёмная' };
             var render = function () {
-                var mode = localStorage.getItem('docsearch-theme') || 'auto';
+                var mode = localStorage.getItem('sito-theme') || 'auto';
                 toggle.title = 'Тема: ' + names[mode] + ' (нажмите, чтобы сменить)';
             };
             render();
             toggle.addEventListener('click', function () {
-                var mode = localStorage.getItem('docsearch-theme') || 'auto';
+                var mode = localStorage.getItem('sito-theme') || 'auto';
                 var next = order[(order.indexOf(mode) + 1) % order.length];
-                localStorage.setItem('docsearch-theme', next);
+                localStorage.setItem('sito-theme', next);
                 var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
                 var theme = next === 'auto' ? (dark ? 'dark' : 'light') : next;
                 document.documentElement.dataset.theme = theme;

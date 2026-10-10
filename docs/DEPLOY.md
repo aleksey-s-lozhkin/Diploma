@@ -7,10 +7,12 @@ diploma живёт на хосте приложений `infra-dev` вместе
 общими контейнерами в сети `infra`.
 
 ```text
-docsearch.pyconstrictor.ru → nginx → diploma-web:8000
-                                        ├── postgres:5432        (база diploma)
-                                        ├── redis:6379/1         (кэш и лимиты)
-                                        └── elasticsearch:9200   (индекс documents)
+sito.pyconstrictor.ru      → nginx → diploma-web:8000
+docsearch.pyconstrictor.ru → nginx → 301 → sito.pyconstrictor.ru   (переходный период)
+
+diploma-web:8000 ──┬── postgres:5432        (база diploma)
+                   ├── redis:6379/1         (кэш и лимиты)
+                   └── elasticsearch:9200   (индекс documents)
 ```
 
 `diploma-web` не публикует ни одного порта на хост. nginx находит его по имени
@@ -21,6 +23,41 @@ docsearch.pyconstrictor.ru → nginx → diploma-web:8000
 продолжают создаваться, при отказе Redis — продолжает работать вход.
 `/health/ready/` сообщит о них как о `degraded`.
 
+## Переходный период: прежний домен
+
+Приложение переименовано, но **прежний адрес `https://docsearch.pyconstrictor.ru`
+продолжает работать**: общий nginx отдаёт с него редирект на новый домен. Так
+задумано, а не оставлено по недосмотру: у людей сайт может быть открыт или лежать
+в закладках, и без редиректа они получили бы ошибку сертификата — переезд
+выглядел бы как поломка.
+
+Пока переход не закончен, держится вместе вот это:
+
+- **в окружении оба имени.** В `/srv/config/env/diploma.env`:
+
+  ```bash
+  ALLOWED_HOSTS=sito.pyconstrictor.ru,docsearch.pyconstrictor.ru,<IP>,localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS=https://sito.pyconstrictor.ru,https://docsearch.pyconstrictor.ru
+  CORS_ALLOWED_ORIGINS=https://sito.pyconstrictor.ru,https://docsearch.pyconstrictor.ru
+  ```
+
+  Причина: nginx принимает запрос по старому имени и передаёт его приложению, а
+  Django сверяет заголовок `Host` со списком. Уберёшь старое имя раньше
+  редиректа — получишь `DisallowedHost` ровно у тех, ради кого переход и
+  делается. Снимать имя можно только когда гаснет сам старый адрес;
+- **оба сертификата живы.** Редирект по HTTPS возможен лишь после
+  TLS-рукопожатия по старому имени, поэтому сертификат
+  `/srv/data/letsencrypt/live/docsearch.pyconstrictor.ru/` остаётся в хранилище и
+  в продлении рядом с новым (`docs/OPERATIONS.md`);
+- **правка окружения требует пересоздания контейнера.** Три списка читаются
+  `config/settings.py` один раз при старте, поэтому после изменения `.env`
+  значения подхватит только `up -d` (автоматический деплой делает это сам).
+
+Проверка, что переход идёт правильно, — в `docs/OPERATIONS.md`, раздел
+«Переходный период». Заканчивает переход владелец: тогда снимаются старое имя из
+трёх списков, старый vhost и его сертификат — **сразу все**, иначе останется либо
+`DisallowedHost`, либо ошибка сертификата.
+
 ## Раскладка на сервере
 
 | Путь | Что |
@@ -28,7 +65,8 @@ docsearch.pyconstrictor.ru → nginx → diploma-web:8000
 | `/srv/compose/diploma/compose.yaml` | `docker-compose.prod.yml` из репозитория |
 | `/srv/compose/diploma/.env` | только образ и путь к окружению, без секретов |
 | `/srv/config/env/diploma.env` | окружение и секреты приложения, права `600` |
-| `/srv/config/nginx/conf.d/docsearch.pyconstrictor.ru.conf` | vhost в общем nginx |
+| `/srv/config/nginx/conf.d/sito.pyconstrictor.ru.conf` | vhost в общем nginx |
+| `/srv/config/nginx/conf.d/docsearch-redirect.conf` | переходный редирект со старого домена и ACME для его сертификата; снимается вместе со старым именем |
 | `/srv/config/nginx/conf.d/pyconstrictor.ru-redirect.conf` | `pyconstrictor.ru` и `www` — редирект на Самогон |
 | `/srv/config/nginx/conf.d/00-default-server.conf` | сервер по умолчанию: обрыв запросов по IP и на неизвестные имена |
 | `/srv/data/diploma/static` | собранная статика, её отдаёт nginx |
@@ -41,8 +79,11 @@ docsearch.pyconstrictor.ru → nginx → diploma-web:8000
 
 ## Что должно быть готово
 
-- DNS `docsearch.pyconstrictor.ru` указывает на адрес хоста, порты 80 и 443
+- DNS `sito.pyconstrictor.ru` указывает на адрес хоста, порты 80 и 443
   открыты наружу.
+- DNS прежнего имени (`docsearch.pyconstrictor.ru`) **тоже** указывает на хост:
+  пока идёт переход, с него работает редирект. Снимать запись можно только
+  вместе со старым vhost'ом.
 - Есть Docker и внешняя сеть `infra`: `docker network inspect infra`.
 - Работают общие контейнеры `postgres`, `redis`, `elasticsearch`, `nginx`.
 - Пользователь деплоя входит в группу `docker`.
@@ -94,7 +135,9 @@ nano /srv/config/env/diploma.env
 - **`REDIS_URL`** — база `/1`. База `/0` занята Самогоном: общий номер означает,
   что `cache.clear()` одного проекта стирает ключи другого. `/3`, `/4`, `/5`
   заняты лаптем;
-- **`ALLOWED_HOSTS`** — домен и IP хоста.
+- **`ALLOWED_HOSTS`** — оба домена (новый и прежний — на время перехода), IP
+  хоста, `localhost` и `127.0.0.1`. Только новый домен указывать нельзя: запрос,
+  пришедший на прежний и перенаправленный прокси в приложение, Django отклонит.
 
 `ELASTICSEARCH_HOST=elasticsearch` менять не нужно, индекс `documents`
 принадлежит этому проекту.
@@ -128,10 +171,10 @@ DIPLOMA_IMAGE=alserloz/diploma:latest docker compose -f compose.yaml config --qu
 проверочным путём:
 
 ```bash
-cat > /srv/config/nginx/conf.d/docsearch-acme.conf <<'NGINX'
+cat > /srv/config/nginx/conf.d/sito-acme.conf <<'NGINX'
 server {
     listen 80;
-    server_name docsearch.pyconstrictor.ru;
+    server_name sito.pyconstrictor.ru;
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / { return 503; }
 }
@@ -145,7 +188,7 @@ docker exec nginx nginx -t && docker exec nginx nginx -s reload
 ```bash
 docker run --rm -v /srv/data/certbot:/var/www/certbot alpine:3 \
   sh -c 'mkdir -p /var/www/certbot/.well-known/acme-challenge && echo ok > /var/www/certbot/.well-known/acme-challenge/probe'
-curl -fsS http://docsearch.pyconstrictor.ru/.well-known/acme-challenge/probe
+curl -fsS http://sito.pyconstrictor.ru/.well-known/acme-challenge/probe
 docker run --rm -v /srv/data/certbot:/var/www/certbot alpine:3 \
   sh -c 'rm -rf /var/www/certbot/.well-known'
 ```
@@ -157,18 +200,27 @@ docker run --rm \
   -v /srv/data/certbot:/var/www/certbot \
   -v /srv/data/letsencrypt:/etc/letsencrypt \
   certbot/certbot certonly --webroot -w /var/www/certbot \
-  -d docsearch.pyconstrictor.ru \
+  -d sito.pyconstrictor.ru \
   --email ВАШ_ЯЩИК@pyconstrictor.ru --agree-tos --no-eff-email --non-interactive
 ```
 
-Установка боевого vhost (временный обязательно удалить: два блока с одним
-`server_name` nginx считает дубликатом):
+Установка боевых vhost: новый домен и переходный редирект со старого. Заодно
+удаляются два файла, которых быть не должно: временный ACME-конфиг и **прежний
+vhost** — он переименован в `sito.pyconstrictor.ru.conf`, а два блока с одним
+`server_name` дают `conflicting server name`: nginx может выбрать старый файл, и
+тогда редирект со старого домена молча не сработает.
 
 ```bash
-scp deploy/nginx/docsearch.pyconstrictor.ru.conf deploy-user@host:/srv/config/nginx/conf.d/
-ssh deploy-user@host 'rm -f /srv/config/nginx/conf.d/docsearch-acme.conf'
+scp deploy/nginx/sito.pyconstrictor.ru.conf deploy/nginx/docsearch-redirect.conf \
+  deploy-user@host:/srv/config/nginx/conf.d/
+ssh deploy-user@host 'rm -f /srv/config/nginx/conf.d/sito-acme.conf \
+  /srv/config/nginx/conf.d/docsearch.pyconstrictor.ru.conf'
 docker exec nginx nginx -t && docker exec nginx nginx -s reload
 ```
+
+После перезагрузки убеждаемся, что старое имя отвечает `301` на новое, а новое —
+`200`: команды в `docs/OPERATIONS.md`, раздел «Переходный период». Сертификат
+старого домена при этом остаётся на месте — без него HTTPS-редирект невозможен.
 
 В vhost обязательна строка `client_max_body_size 20m`. Без неё действует дефолт
 nginx в 1 МБ, и любая загрузка больше мегабайта получает `413 Request Entity Too
@@ -196,8 +248,8 @@ docker inspect --format '{{json .State.Health}}' diploma-web
 Проверка:
 
 ```bash
-curl -fsS https://docsearch.pyconstrictor.ru/health/
-curl -fsS https://docsearch.pyconstrictor.ru/health/ready/
+curl -fsS https://sito.pyconstrictor.ru/health/
+curl -fsS https://sito.pyconstrictor.ru/health/ready/
 docker port diploma-web     # пусто: портов на хост нет
 ```
 
@@ -289,7 +341,7 @@ commit=<нужный коммит>
 
 rm -rf /tmp/diploma-build
 git clone --quiet --branch "$commit" --depth 1 \
-  https://github.com/aleksey-s-lozhkin/Diploma.git /tmp/diploma-build
+  https://github.com/aleksey-s-lozhkin/sito.git /tmp/diploma-build
 docker build --tag "alserloz/diploma:$commit" /tmp/diploma-build
 
 # Запоминаем работающий образ, чтобы было куда вернуться
@@ -344,8 +396,10 @@ docker run --rm -v /srv/data/certbot:/var/www/certbot \
 
 ## Чего автоматика не делает
 
-- **Не обновляет vhost.** `deploy/nginx/docsearch.pyconstrictor.ru.conf`
-  копируется в общий nginx вручную.
+- **Не обновляет vhost.** `deploy/nginx/sito.pyconstrictor.ru.conf` и
+  `deploy/nginx/docsearch-redirect.conf` копируются в общий nginx вручную, и
+  старый `docsearch.pyconstrictor.ru.conf` удаляется тоже вручную: пока он лежит
+  рядом, имена конфликтуют.
 - **Не откатывает миграции.**
 - **Не обновляет `.env`.** Изменения `ALLOWED_HOSTS` или `REDIS_URL` применяются
   только при пересоздании контейнера, то есть при следующем деплое.

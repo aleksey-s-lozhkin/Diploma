@@ -1,7 +1,31 @@
+# Прод-подобная локальная раскладка Сита: всё в контейнерах, вход через nginx.
+#
+# ВНИМАНИЕ, ЛОВУШКА ПЕРЕХОДА (DocSearch -> Сито), имена контейнеров
+# переименованы docsearch_* -> sito_*.
+#
+# Docker при `docker compose up -d` НЕ переименовывает работающий контейнер:
+# он создаёт НОВЫЙ sito_*, а СТАРЫЙ docsearch_* остаётся жив и продолжает
+# держать опубликованные порты (здесь это 80 и 443 у nginx). Итог: `up -d`
+# падает на конфликте портов, а если старый контейнер не публиковал порты —
+# часть запросов молча уходит в него.
+#
+# Поэтому порядок выкатки такой: сначала убрать старые контейнеры, потом
+# поднимать новые.
+#   docker rm -f docsearch_nginx docsearch_web docsearch_redis docsearch_es docsearch_db
+#   docker compose up -d
+# Это делает лид при выкатке — тот, кто правит конфиг, на сервере ничего не
+# запускает.
+#
+# Второе следствие: у файла нет поля name, имя compose-проекта берётся из
+# каталога. Каталог переименован (Diploma -> sito), поэтому тома теперь
+# sito_postgres_data / sito_es_data / ... и создаются пустыми — данные из
+# diploma_* в них не попадут. Это локальная беда: на сервере работает
+# docker-compose.prod.yml, а там bind-mount'ы /srv/data/diploma и данные
+# никуда не деваются.
 services:
   db:
     image: postgres:15-alpine
-    container_name: docsearch_db
+    container_name: sito_db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-docsearch}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -17,7 +41,7 @@ services:
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: docsearch_es
+    container_name: sito_es
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
@@ -35,7 +59,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: docsearch_redis
+    container_name: sito_redis
     volumes:
       - redis_data:/data
     healthcheck:
@@ -47,7 +71,7 @@ services:
 
   web:
     build: .
-    container_name: docsearch_web
+    container_name: sito_web
     volumes:
       - ./static:/app/static
       - media_data:/app/media
@@ -86,7 +110,9 @@ services:
 
   nginx:
     image: nginx:1.25-alpine
-    container_name: docsearch_nginx
+    container_name: sito_nginx
+    # Именно эти порты и создают ловушку перехода: пока жив старый
+    # docsearch_nginx, он держит 80/443 и новый контейнер их не займёт.
     ports:
       - "80:80"
       - "443:443"

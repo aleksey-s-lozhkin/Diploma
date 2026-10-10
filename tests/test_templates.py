@@ -86,7 +86,13 @@ class BrandAndNavigationTest(TestCase):
         self.client.force_login(self.user)
         body = self.client.get(reverse("dashboard")).content.decode()
 
-        self.assertIn("logo.jpeg", body, "логотип пропал из шапки")
+        # Имя и знак — то, по чему приложение узнаётся. Знак проверяем по
+        # data-brand, а не по классу оформления: класс переименовывают при
+        # первой же правке стилей, и тест на нём ломается на ровном месте,
+        # ничего не сообщив о поломке. data-brand меняется только вместе с
+        # именем приложения — то есть тогда, когда тест и должен упасть.
+        self.assertIn("Сито", body, "имя приложения пропало из шапки")
+        self.assertIn('data-brand="sito"', body, "знак пропал из шапки")
         self.assertIn('class="topbar"', body)
         self.assertIn('class="foot', body, "подвал пропал")
         for label in ("Поиск", "Документы", "Создать", "История", "Выйти"):
@@ -95,7 +101,8 @@ class BrandAndNavigationTest(TestCase):
     def test_login_page_has_logo_and_footer(self):
         body = self.client.get(reverse("login")).content.decode()
 
-        self.assertIn("logo.jpeg", body)
+        self.assertIn("Сито", body, "имя приложения пропало со страницы входа")
+        self.assertIn('data-brand="sito"', body, "знак пропал со страницы входа")
         self.assertIn('class="foot', body)
         self.assertIn("Регистрация", body, "из подвала пропала ссылка на регистрацию")
 
@@ -139,7 +146,10 @@ class LayoutRegressionTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="dashboard-container"', body)
-        self.assertNotIn("logo.jpeg", body, "в подменяемый кусок попала шапка с логотипом")
+        # Подменяемый кусок — только список. Если в него попадёт шапка, знак
+        # приедет вместе с ней и встанет посреди страницы. Ищем знак, а не
+        # класс оформления, — по той же причине, что и в проверке выше.
+        self.assertNotIn('data-brand="sito"', body, "в подменяемый кусок попала шапка со знаком")
         self.assertNotIn("<nav", body, "в подменяемый кусок попала панель переходов")
         self.assertNotIn("<footer", body, "в подменяемый кусок попал подвал")
 

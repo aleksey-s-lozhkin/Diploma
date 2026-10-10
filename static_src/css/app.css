@@ -1,9 +1,9 @@
-/* Стили DocSearch.
+/* Стили Сито.
  *
  * Оформление — то же, что у lapot и Самогона: тёплый графит вместо
  * нейтрального серого, янтарный акцент, одинаковые высоты элементов,
  * радиусы, тени и переключатель темы. Значения переменных взяты из lapot
- * дословно — это общий язык трёх приложений; разметка написана под DocSearch,
+ * дословно — это общий язык трёх приложений; разметка написана под Сито,
  * потому что копировать чужой файл целиком значило бы притащить правила под
  * экраны, которых здесь нет.
  *
@@ -424,15 +424,18 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
   .spinner { animation: none; border-top-color: var(--panel-light); }
 }
 
-/* --- Шапка с логотипом ---
-   Логотип вернулся: приложение узнаётся по собаке, а не по подписи, и без него
-   страница выглядит казённой. Он же стоит в подвале. */
+/* --- Шапка со знаком ---
+   Приложение узнаётся по знаку, а не только по подписи: одна подпись делает
+   страницу казённой. Он же стоит в подвале и рядом с пояснением на входе.
+
+   Рамки и тени у знака нет намеренно — они остались бы от растрового
+   логотипа. Картинке рамка нужна, чтобы не выглядеть наклейкой; линии в рамке,
+   наоборот, тесно, а цвет знак берёт из текста (`currentColor`), поэтому
+   подстраивается под тему сам. Размер задан атрибутами в разметке, здесь —
+   только фактический: без CSS знак всё равно останется нужного размера. */
 .topbar { margin: 0 0 20px; }
 .topbar a { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
-.topbar img {
-  width: 48px; height: 48px; border-radius: 14px; object-fit: cover;
-  box-shadow: var(--shadow-small);
-}
+.topbar .mark { width: 48px; height: 48px; flex: none; }
 .topbar .titles { display: flex; flex-direction: column; }
 .topbar .name { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; }
 .topbar .sub { font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
@@ -461,7 +464,7 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
 :root[data-theme-mode="auto"] .only-auto,
 :root[data-theme-mode="light"] .only-light,
 :root[data-theme-mode="dark"] .only-dark { display: inline-flex; }
-.foot img { width: 30px; height: 30px; border-radius: 9px; object-fit: cover; }
+.foot .mark { width: 30px; height: 30px; flex: none; }
 .foot a { color: var(--text-soft); text-decoration: none; }
 .foot a:hover { color: var(--text); text-decoration: underline; }
 
@@ -494,14 +497,14 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
 .auth { display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .auth > div { width: 100%; max-width: 460px; }
 /* На телефоне пояснение скрыто целиком: его урезанная версия (знак и название)
-   дублировала шапку — две собаки и два «Поиск документов» подряд. */
+   дублировала шапку — два знака и два «Сито» подряд. */
 .auth-aside { display: none; }
-.auth-aside img { width: 60px; height: 60px; border-radius: 18px; box-shadow: var(--shadow-small); }
+.auth-aside .mark { width: 60px; height: 60px; }
 .auth-aside h2 { font-size: 20px; margin: 12px 0 0; }
 .auth-aside p, .auth-aside ul { display: none; }
 @media (min-width: 720px) {
   .auth-aside { display: block; }
-  .auth-aside img { width: 72px; height: 72px; border-radius: 22px; }
+  .auth-aside .mark { width: 72px; height: 72px; }
   .auth-aside h2 { font-size: 23px; }
   .auth-aside p { display: block; color: var(--text-soft); margin: 8px 0 0; }
   .auth-aside ul { display: block; margin: 10px 0 0; padding: 0; list-style: none; color: var(--text-muted); }
@@ -516,7 +519,7 @@ dialog.viewer::backdrop { background: rgba(0, 0, 0, .55); }
     position: fixed; top: 0; left: 0; z-index: 20;
     margin: 0; padding: 10px 16px;
   }
-  .topbar img { width: 42px; height: 42px; border-radius: 13px; }
+  .topbar .mark { width: 42px; height: 42px; }
 }
 
 /* --- Сегментированный контрол ---
