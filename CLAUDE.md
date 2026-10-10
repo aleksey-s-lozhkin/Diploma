@@ -76,7 +76,8 @@ $ANDROID_HOME/platform-tools/adb exec-out screencap -p > /tmp/shot.png
   Пересборка: `manage.py search_index --rebuild -f`, `manage.py reextract_text`,
   `manage.py reindex_chunks`.
 - Языковая модель: Ollama в локальной сети, `OLLAMA_URL` в окружении.
-  Описания и теги — `qwen3:8b`, дословный отрывок — `qwen3:4b-instruct`
+  Описания, теги и дословный отрывок — **`qwen3:8b`**, общая с лаптем и
+  Самогоном ([ADR-0010](https://github.com/aleksey-s-lozhkin/lapot/blob/main/docs/decisions/0010-one-model-for-two-apps.md))
   (на замере быстрее и точнее). Ответ модели принимается только если он дословно
   есть в тексте документа.
 - Граница с потребителями зафиксирована в [docs/SEARCH-CONTRACT.md](docs/SEARCH-CONTRACT.md):
