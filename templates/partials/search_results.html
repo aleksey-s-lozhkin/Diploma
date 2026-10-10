@@ -84,6 +84,13 @@
                         {% endif %}
                     </div>
 
+                    {% if forloop.counter <= 3 and query %}
+                        {# Умный отрывок приезжает следом: модель отвечает секунды, и
+                           задерживать из-за неё весь список нельзя. #}
+                        <div class="answer-slot" hx-get="{% url 'search_fragment' %}?id={{ doc.id }}&query={{ query|urlencode }}"
+                             hx-trigger="load" hx-swap="innerHTML"></div>
+                    {% endif %}
+
                     <div class="counts">
                         {% if doc.highlights %}<span class="count">{{ doc.highlights|length }} совпадений</span>{% endif %}
                         <span class="count">{{ doc.created_date|date:"d.m.Y H:i" }}</span>

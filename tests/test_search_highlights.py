@@ -9,10 +9,11 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
 from elasticsearch_dsl import Search
 from elasticsearch_dsl.utils import AttrDict
 
-from documents.models import SearchHistory
+from documents.models import Document, SearchHistory
 from documents.services.search_service import HIGHLIGHT_POST_TAG, HIGHLIGHT_PRE_TAG, SearchService, sanitize_highlight
 
 User = get_user_model()
@@ -149,3 +150,57 @@ class SearchHistoryRecordingTest(TestCase):
 
         _remember_search(self.user, "   ", 0)
         self.assertEqual(SearchHistory.objects.filter(user=self.user).count(), 0)
+
+
+class FragmentVerificationTest(TestCase):
+    """Отрывок от модели принимаем, только если он дословно есть в тексте."""
+
+    def test_verbatim_answer_is_kept(self):
+        from documents.services.summary_service import verify_fragment
+
+        text = "Как создать множество: my_set = {1, 2, 3}"
+        self.assertEqual(verify_fragment("my_set = {1, 2, 3}", text), "my_set = {1, 2, 3}")
+
+    def test_invented_answer_is_dropped(self):
+        from documents.services.summary_service import verify_fragment
+
+        self.assertEqual(verify_fragment("модель это придумала", "совсем другой текст"), "")
+
+    def test_too_short_answer_is_dropped(self):
+        from documents.services.summary_service import verify_fragment
+
+        self.assertEqual(verify_fragment("dict", "текст со словом dict"), "")
+
+
+class SearchFragmentViewTest(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="owner@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.other = get_user_model().objects.create_user(
+            email="other@example.com", password="pass12345", is_active=True, is_email_verified=True
+        )
+        self.document = Document.objects.create(user=self.user, text="Множества и словари " * 20)
+
+    def test_anonymous_is_redirected(self):
+        response = self.client.get(reverse("search_fragment"), {"id": self.document.pk, "query": "словари"})
+        self.assertEqual(response.status_code, 302)
+
+    def test_fragment_is_returned_for_own_document(self):
+        from unittest import mock
+
+        self.client.force_login(self.user)
+        # Патчим там, где имя используется: представление импортировало его к себе.
+        with mock.patch("documents.views.views_web.answer_fragment", return_value="Множества и словари"):
+            response = self.client.get(reverse("search_fragment"), {"id": self.document.pk, "query": "словари"})
+
+        self.assertContains(response, "по существу")
+        # Слово запроса внутри отрывка подсвечивается, поэтому проверяем по частям.
+        self.assertContains(response, "Множества и")
+        self.assertContains(response, "<mark>словари</mark>")
+
+    def test_other_users_private_document_gives_nothing(self):
+        self.client.force_login(self.other)
+        response = self.client.get(reverse("search_fragment"), {"id": self.document.pk, "query": "словари"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "по существу")

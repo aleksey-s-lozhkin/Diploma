@@ -1,15 +1,18 @@
+import hashlib
 import logging
 from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.decorators import method_decorator
+from django.utils.html import escape
 from django.views import View
 from django.views.decorators.cache import never_cache
 from django_htmx.http import HttpResponseClientRedirect, HttpResponseClientRefresh
@@ -26,7 +29,8 @@ from documents.constants import (
 from documents.models import Document, SearchHistory
 from documents.rate_limit import RateLimiters
 from documents.rubrics import get_cached_rubrics
-from documents.services.search_service import SearchService
+from documents.services.search_service import SearchService, mark_query_terms
+from documents.services.summary_service import answer_fragment
 from documents.utils import extract_text_from_file
 
 logger = logging.getLogger(__name__)
@@ -458,3 +462,37 @@ class TogglePublicView(View):
 class GetRubricsView(View):
     def get(self, request):
         return render(request, "partials/rubrics_select.html", {"rubrics": get_cached_rubrics(request.user)})
+
+
+@method_decorator(login_required, name="dispatch")
+class SearchFragmentView(View):
+    """Отрывок «по существу» — догружается уже после того, как показан список.
+
+    Модель отвечает 3–9 секунд, и ждать её в поиске нельзя: карточки приходят
+    сразу, а этот блок — следом, отдельным запросом. Результат кешируется по
+    паре (документ, запрос), поэтому повторный поиск того же запроса модель не
+    ждёт вовсе.
+    """
+
+    CACHE_SECONDS = 24 * 60 * 60
+
+    def get(self, request):
+        document = Document.objects.filter(pk=request.GET.get("id")).first()
+        query = (request.GET.get("query") or "").strip()
+        allowed = document is not None and (document.is_public or document.user_id == request.user.id)
+
+        if not allowed or not query:
+            return render(request, "partials/search_fragment.html", {"fragment": ""})
+
+        key = f"fragment:{document.pk}:{hashlib.sha256(query.lower().encode()).hexdigest()[:16]}"
+        fragment = cache.get(key)
+        if fragment is None:
+            fragment = answer_fragment(document.text, query)
+            cache.set(key, fragment, self.CACHE_SECONDS)
+
+        if fragment:
+            # Экранируем и только потом подсвечиваем слова запроса — как и в
+            # результатах Elasticsearch.
+            fragment = mark_query_terms(escape(fragment), query)
+
+        return render(request, "partials/search_fragment.html", {"fragment": fragment})

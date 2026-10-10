@@ -39,6 +39,9 @@ PROMPT = """Ты помогаешь описать документ в поис�
 #: Значения по умолчанию: набор настроек зависит от окружения (в проверках он
 #: свой), и сервис не должен падать из-за отсутствующей переменной.
 DEFAULT_MODEL = "qwen3:8b"
+#: Для дословного отрывка меньшая модель оказалась и быстрее, и точнее:
+#: 2,7 с против 7,3 с на замере, а большая один раз из двух дописала текст.
+DEFAULT_FRAGMENT_MODEL = "qwen3:4b-instruct"
 DEFAULT_TIMEOUT = 90
 DEFAULT_TEXT_LIMIT = 6000
 
@@ -52,22 +55,21 @@ def is_enabled() -> bool:
     return bool(_setting("OLLAMA_URL", ""))
 
 
-def _ask_model(prompt: str) -> str:
+def _ask_model(prompt: str, model: str = None, as_json: bool = True) -> str:
     """Запрос к Ollama. Возвращает сырой ответ модели."""
-    payload = json.dumps(
-        {
-            "model": _setting("OLLAMA_MODEL", DEFAULT_MODEL),
-            "prompt": prompt,
-            "stream": False,
-            # Просим строгий JSON: разбирать прозу с вкраплениями JSON — лишняя работа.
-            "format": "json",
-            "options": {"temperature": 0.2},
-        }
-    ).encode("utf-8")
+    payload = {
+        "model": model or _setting("OLLAMA_MODEL", DEFAULT_MODEL),
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.2 if as_json else 0.0},
+    }
+    if as_json:
+        # Просим строгий JSON: разбирать прозу с вкраплениями JSON — лишняя работа.
+        payload["format"] = "json"
 
     request = urllib.request.Request(
         f"{_setting('OLLAMA_URL', '').rstrip('/')}/api/generate",
-        data=payload,
+        data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=_setting("OLLAMA_TIMEOUT_SECONDS", DEFAULT_TIMEOUT)) as response:
@@ -121,3 +123,46 @@ def summarize_document(document) -> bool:
     document.save(update_fields=["summary", "keywords"])
     logger.info("Документ %s: описание получено (%s тегов)", document.pk, len(keywords))
     return True
+
+
+FRAGMENT_PROMPT = """Ниже текст документа. Найди в нём и верни ДОСЛОВНО одну-две фразы, которые отвечают на запрос.
+Верни только этот отрывок, без пояснений, без кавычек и без своих слов.
+
+Запрос: {query}
+
+Текст:
+{text}"""
+
+
+def verify_fragment(answer: str, text: str) -> str:
+    """Оставить отрывок, только если он дословно есть в тексте.
+
+    Модель дописывает и склеивает: на замере большая модель один раз из двух
+    вернула фразу, которой в документе нет. Проверка детерминированная — ищем
+    ответ в тексте, и всё, чего там нет, отбрасываем.
+    """
+    flat_answer = " ".join((answer or "").split()).strip(" \"'«»")
+    flat_text = " ".join((text or "").split())
+
+    if len(flat_answer) < 15 or flat_answer not in flat_text:
+        return ""
+    return flat_answer[:600]
+
+
+def answer_fragment(text: str, query: str) -> str:
+    """Отрывок, отвечающий на запрос. Пустая строка, если не получилось."""
+    if not is_enabled() or len((text or "").strip()) < 200 or len((query or "").strip()) < 3:
+        return ""
+
+    limit = _setting("SUMMARY_TEXT_LIMIT", DEFAULT_TEXT_LIMIT)
+    prompt = FRAGMENT_PROMPT.format(query=query, text=text[:limit])
+    model = _setting("OLLAMA_FRAGMENT_MODEL", DEFAULT_FRAGMENT_MODEL)
+
+    try:
+        answer = _ask_model(prompt, model=model, as_json=False)
+    # TimeoutError и URLError — подклассы OSError, отдельно их перечислять нечего.
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        logger.warning("Отрывок не получен: %s", exc)
+        return ""
+
+    return verify_fragment(_parse(answer)[0] or answer, text)
