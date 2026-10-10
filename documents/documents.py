@@ -1,10 +1,11 @@
 from django_elasticsearch_dsl import Document, Index, fields
-from elasticsearch_dsl import Boolean
+from elasticsearch_dsl import Boolean, DenseVector
 from elasticsearch_dsl import Document as EsDocument
 from elasticsearch_dsl import Index as EsIndex
 from elasticsearch_dsl import Integer, Keyword, Text, analyzer, token_filter
 
 from .models import Document as DocumentModel
+from .services.embedding_service import DEFAULT_DIMS as EMBED_DIMS
 
 # Создаем стоп-фильтр для русского языка
 russian_stop = token_filter("russian_stop", type="stop", stopwords="_russian_")
@@ -145,3 +146,16 @@ class ChunkIndex(EsDocument):
     rubrics = Text(analyzer="standard")
     is_public = Boolean()
     user_id = Integer()
+    #: Вектор куска для векторного поиска (docs/RAG-EXPERIMENT.md).
+    #:
+    #: `index=True` — обязательное условие knn-поиска в Elasticsearch 8: без
+    #: него вектор можно только хранить, искать по нему нельзя. Косинус, а не
+    #: скалярное произведение: куски разной длины, и близость не должна
+    #: зависеть от того, что один кусок длиннее другого.
+    #:
+    #: Размерность берётся из сервиса эмбеддингов, а не выписана числом:
+    #: там же она сверяется с ответом модели, и разойтись они не могут.
+    #:
+    #: В уже созданный индекс поле добавляет команда `embed_chunks` через
+    #: `PUT _mapping` — пересоздавать индекс ради нового поля не нужно.
+    dense_vector = DenseVector(dims=EMBED_DIMS, index=True, similarity="cosine")
