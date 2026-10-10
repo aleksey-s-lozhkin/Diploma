@@ -1,7 +1,7 @@
 {
     "openapi": "3.0.3",
     "info": {
-        "title": "DocSearch API",
+        "title": "Сито API",
         "version": "1.0.0",
         "description": "API для поиска по документам с аутентификацией"
     },
