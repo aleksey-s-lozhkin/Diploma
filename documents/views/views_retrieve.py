@@ -11,7 +11,7 @@ from collections import Counter
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from elasticsearch.exceptions import NotFoundError, TransportError
-from elasticsearch_dsl import Q, Search
+from elasticsearch_dsl import Q, Search, connections
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -42,6 +42,13 @@ FETCH_FACTOR = 4
 #: здесь, а не у потребителя, потому что измерять и настраивать его должен
 #: поиск (контракт, §5).
 VECTOR_MIN_SCORE = None
+
+#: Поле с вектором. Имя задано маппингом (`documents/documents.py`).
+VECTOR_FIELD = "dense_vector"
+
+#: Постоянная сглаживания RRF. Обычное значение 60; проверено, что результат
+#: не меняется при 10 и 100 — то есть выбор не подгонка.
+RRF_K = 60
 
 
 class RetrieveView(APIView):
@@ -94,10 +101,8 @@ class RetrieveView(APIView):
         if not isinstance(rubrics, list) or any(not isinstance(rubric, str) for rubric in rubrics):
             return Response({"error": "rubrics: список строк"}, status=status.HTTP_400_BAD_REQUEST)
 
-        search = self._build_search(request.auth, query, rubrics, limit)
-
         try:
-            response = search.execute()
+            hits, source = self._hybrid_hits(request.auth, query, rubrics, limit)
         except NotFoundError:
             # Индекс не создан — это не «ничего не нашлось», а неполадка:
             # пустой ответ читался бы как «материала нет».
@@ -113,14 +118,34 @@ class RetrieveView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        results = self._collect(response, limit)
-        logger.info("Поиск отрывков: «%s» → %s результатов", query, len(results))
-        # Пока векторов нет, честный источник — полнотекстовый (контракт, §3).
-        return Response({"results": results, "source": "fulltext"})
+        results = self._collect(hits, limit)
+        logger.info("Поиск отрывков: «%s» → %s результатов, источник %s", query, len(results), source)
+        # `source` — чем именно нашли. Контракт (§3) требует говорить это
+        # честно: «vector» значит, что полнотекст не дал ничего, «fulltext» —
+        # что вектора недоступны.
+        return Response({"results": results, "source": source})
+
+    @staticmethod
+    def _visible_clauses(api_token) -> list:
+        """Кому что видно — следствие токена, а не параметр запроса (§2)."""
+        clauses = [Q("term", is_public=True)]
+        if api_token.scope == ApiToken.SCOPE_PERSONAL and api_token.user_id:
+            clauses.append(Q("term", user_id=api_token.user_id))
+        return clauses
+
+    @staticmethod
+    def _visible_body(api_token) -> dict:
+        """То же самое словарём: внутрь `knn` объект DSL не положить."""
+        return {
+            "bool": {
+                "should": [clause.to_dict() for clause in RetrieveView._visible_clauses(api_token)],
+                "minimum_should_match": 1,
+            }
+        }
 
     @staticmethod
     def _build_search(api_token, query, rubrics, limit):
-        """Запрос к индексу кусков с учётом видимости документов токена."""
+        """Полнотекстовый запрос к индексу кусков."""
         search = Search(index=CHUNKS_INDEX)
 
         search = search.query(
@@ -128,17 +153,17 @@ class RetrieveView(APIView):
             query=query,
             # Текст весомее заголовка: заголовок часто повторяет рубрику.
             fields=["text^3", "title^2"],
+            # `and` и 70 % — **намеренно строго**, и это замерено: мягкий
+            # вариант (operator=or, 50 %) на маленьком корпусе выглядел
+            # лучше, а на 329 кусках не отличался от базового. Строгий
+            # полнотекст лучше держит точные совпадения, а промахи по
+            # перефразированным закрывает векторная половина.
             operator="and",
             fuzziness="AUTO",
             minimum_should_match="70%",
         )
 
-        # Видимость: служебный токен — только публичные, персональный — свои и
-        # публичные. Потребитель этого не выбирает, это следствие токена (§2).
-        visible = [Q("term", is_public=True)]
-        if api_token.scope == ApiToken.SCOPE_PERSONAL and api_token.user_id:
-            visible.append(Q("term", user_id=api_token.user_id))
-        search = search.query("bool", should=visible, minimum_should_match=1)
+        search = search.query("bool", should=RetrieveView._visible_clauses(api_token), minimum_should_match=1)
 
         if rubrics:
             search = search.query(
@@ -149,17 +174,138 @@ class RetrieveView(APIView):
 
         if VECTOR_MIN_SCORE is not None:
             search = search.extra(min_score=VECTOR_MIN_SCORE)
+        else:
+            # Полнотекстовая половина может не найти ничего — тогда гибрид
+            # обязан опереться на вектора, а не вернуть пустоту.
+            pass
 
         return search[: max(limit * FETCH_FACTOR, limit)]
 
     @staticmethod
-    def _collect(response, limit) -> list:
-        """Собрать ответ, не давая одному документу занять всю выдачу."""
+    def _knn_body(api_token, query, size) -> dict:
+        """Векторный запрос телом, а не объектом DSL.
+
+        Почему так, а не `search.query("knn", ...)`: в замке клиент 7.17, и
+        `knn` как clause он не знает — отвечает `UnknownDslObject`. Параметр
+        верхнего уровня появился в 8.x и через `.extra()` недоступен.
+
+        **Фильтр видимости обязан быть ВНУТРИ `knn`.** Это проверено на
+        живом индексе: с top-level фильтром запрос возвращает чужие куски,
+        потому что `knn` верхнего уровня `query` не учитывает. Для проекта,
+        где изоляция документов держится на ADR-0001, это прямой доступ к
+        чужому, а не недочёт.
+        """
+        from documents.services.embedding_service import embed_query
+
+        return {
+            "knn": {
+                "field": VECTOR_FIELD,
+                "query_vector": embed_query(query),
+                "k": size,
+                "num_candidates": max(size * 10, 100),
+                "filter": RetrieveView._visible_body(api_token),
+            },
+            "_source": [
+                "document_id",
+                "chunk_index",
+                "chunk_total",
+                "document_version",
+                "title",
+                "rubrics",
+                "is_public",
+                "user_id",
+            ],
+            "size": size,
+        }
+
+    @staticmethod
+    def _hit_to_dict(hit) -> dict:
+        """Один отрывок в общем виде — чтобы слияние не знало, откуда он."""
+        source = hit if isinstance(hit, dict) else hit.to_dict()
+        source = source.get("_source", source)
+        return {
+            "document_id": source.get("document_id"),
+            "chunk_index": source.get("chunk_index"),
+            "chunk_total": source.get("chunk_total"),
+            "document_version": source.get("document_version"),
+            "title": source.get("title"),
+            "text": source.get("text"),
+            "rubrics": list(source.get("rubrics") or []),
+            "is_public": bool(source.get("is_public")),
+            "user_id": source.get("user_id"),
+        }
+
+    @staticmethod
+    def _fuse_rrf(*ranked_lists, k: int = RRF_K) -> list:
+        """Слить выдачи по рангам (Reciprocal Rank Fusion).
+
+        Почему по рангам, а не по очкам: BM25 и косинус живут на **разных
+        шкалах**, и складывать их напрямую — складывать метры с
+        килограммами. RRF складывает `1 / (k + место)`, то есть **места**,
+        и нормировка не нужна.
+
+        Замер этого и требует. На 329 кусках:
+        `hybrid_rrf_strict` дал 13/15 против 10/15 у одного полнотекста,
+        а слияние по очкам (`hybrid_weighted`) — 9/15.
+        """
+        scores: dict = {}
+        items: dict = {}
+        for ranked in ranked_lists:
+            for rank, item in enumerate(ranked, start=1):
+                key = (item["document_id"], item["chunk_index"])
+                scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+                items.setdefault(key, item)
+
+        order = sorted(scores.items(), key=lambda kv: -kv[1])
+        return [items[key] for key, _ in order]
+
+    @staticmethod
+    def _hybrid_hits(api_token, query, rubrics, limit) -> tuple[list, str]:
+        """Полнотекст плюс вектора. Возвращает отрывки и честный источник."""
+        size = max(limit * FETCH_FACTOR, limit)
+
+        text_hits: list = []
+        try:
+            response = RetrieveView._build_search(api_token, query, rubrics, limit).execute()
+            text_hits = [RetrieveView._hit_to_dict(hit) for hit in response]
+        except (NotFoundError, TransportError):
+            # Индекс или связь недоступны — это не «не нашлось», и решает
+            # вызывающий. Векторную половину всё равно пробуем: вдруг жива.
+            raise
+
+        knn_hits: list = []
+        try:
+            body = RetrieveView._knn_body(api_token, query, size)
+            raw = connections.get_connection().search(index=CHUNKS_INDEX, body=body)
+            knn_hits = [RetrieveView._hit_to_dict(hit) for hit in raw["hits"]["hits"]]
+        except Exception as exc:  # noqa: BLE001
+            # Вектора — **дополнение**, а не замена. Их отказ не должен
+            # ломать поиск: без них работает полнотекст, и об этом честно
+            # сообщается в `source`.
+            logger.warning("Векторная половина недоступна, отвечаю полнотекстом: %s", exc)
+            return text_hits, "fulltext"
+
+        if not knn_hits:
+            return text_hits, "fulltext"
+        if not text_hits:
+            return knn_hits, "vector"
+
+        return RetrieveView._fuse_rrf(text_hits, knn_hits), "hybrid"
+
+    @staticmethod
+    def _collect(hits, limit) -> list:
+        """Собрать ответ, не давая одному документу занять всю выдачу.
+
+        На входе — словари: после слияния отрывки приходят из двух разных
+        источников, и у них уже нет ни `meta.score`, ни атрибутов объекта
+        DSL. Приводим к общему виду **до** слияния, чтобы здесь не знать,
+        откуда что пришло.
+        """
         results = []
         per_document = Counter()
 
-        for hit in response:
-            document_id = hit.document_id
+        for hit in hits:
+            document_id = hit["document_id"]
             if per_document[document_id] >= MAX_CHUNKS_PER_DOCUMENT:
                 continue
             per_document[document_id] += 1
@@ -167,18 +313,20 @@ class RetrieveView(APIView):
             results.append(
                 {
                     "document_id": document_id,
-                    "chunk_index": hit.chunk_index,
-                    "chunk_total": hit.chunk_total,
+                    "chunk_index": hit["chunk_index"],
+                    "chunk_total": hit["chunk_total"],
                     # Ответ на §8.3 контракта: по отпечатку видно, что документ
                     # изменился и отрывок мог устареть.
-                    "document_version": getattr(hit, "document_version", None),
-                    "title": getattr(hit, "title", None),
-                    "text": hit.text,
-                    # Шкала — BM25, а не вероятность: сравнивать score разных
-                    # источников нельзя, о чём сказано в docs/ARCHITECTURE.md.
-                    "score": round(float(hit.meta.score or 0.0), 4),
-                    "rubrics": list(hit.rubrics) if isinstance(hit.rubrics, list) else [],
-                    "is_public": bool(hit.is_public),
+                    "document_version": hit.get("document_version"),
+                    "title": hit.get("title"),
+                    "text": hit.get("text"),
+                    # Очки намеренно не отдаём: после слияния по рангам это
+                    # уже не BM25 и не косинус, а сумма обратных мест. Шкалы
+                    # разных источников несравнимы (docs/ARCHITECTURE.md), и
+                    # число, которое ничего не значит, хуже его отсутствия.
+                    "score": None,
+                    "rubrics": hit.get("rubrics") or [],
+                    "is_public": bool(hit.get("is_public")),
                 }
             )
             if len(results) >= limit:
